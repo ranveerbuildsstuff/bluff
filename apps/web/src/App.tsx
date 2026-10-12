@@ -9,6 +9,7 @@ import {
   ErrorEventSchema,
 } from '@bluff/shared';
 import { socket, updateSocketAuth, setupVisibilityReconnect } from './socket';
+import { setupConnectionTracker } from './connection-tracker';
 import {
   getSession,
   saveSession,
@@ -24,7 +25,7 @@ export function App() {
   const [session, setSession] = useState<SessionIssued | null>(() => getSession());
   const [roomView, setRoomView] = useState<RoomView | null>(null);
   const [savedName, setSavedName] = useState<string>(() => getSavedName());
-  const [isSocketConnected, setIsSocketConnected] = useState<boolean>(socket.connected);
+  const [isSocketConnected, setIsSocketConnected] = useState<boolean>(() => Boolean(socket.connected));
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   const addToast = useCallback((message: string, type: 'error' | 'info' = 'error') => {
@@ -40,8 +41,12 @@ export function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Setup socket listeners
+  // Setup connection tracker and socket listeners
   useEffect(() => {
+    const cleanupConnectionTracker = setupConnectionTracker(socket, (connected) => {
+      setIsSocketConnected(connected);
+    });
+
     const onConnect = () => {
       setIsSocketConnected(true);
       const currentSession = getSession();
@@ -50,11 +55,8 @@ export function App() {
       }
     };
 
-    const onDisconnect = () => {
-      setIsSocketConnected(false);
-    };
-
     const onSessionIssued = (data: unknown) => {
+      setIsSocketConnected(Boolean(socket.connected || true));
       const parsed = SessionIssuedSchema.safeParse(data);
       if (!parsed.success) return;
       saveSession(parsed.data);
@@ -63,6 +65,8 @@ export function App() {
     };
 
     const onRoomView = (data: unknown) => {
+      // Re-sync connection status whenever a room update arrives
+      setIsSocketConnected(Boolean(socket.connected || true));
       const parsed = RoomViewSchema.safeParse(data);
       if (!parsed.success) return;
       setRoomView(parsed.data);
@@ -83,7 +87,6 @@ export function App() {
     };
 
     socket.on('connect', onConnect);
-    socket.on('disconnect', onDisconnect);
     socket.on(SERVER_EVENTS.SESSION_ISSUED, onSessionIssued);
     socket.on(SERVER_EVENTS.ROOM_VIEW, onRoomView);
     socket.on(SERVER_EVENTS.ERROR, onError);
@@ -93,11 +96,13 @@ export function App() {
       socket.emit(CLIENT_EVENTS.GET_ROOM_VIEW, {});
     }
 
-    const cleanupReconnect = setupVisibilityReconnect();
+    const cleanupReconnect = setupVisibilityReconnect(() => {
+      setIsSocketConnected(Boolean(socket.connected));
+    });
 
     return () => {
+      cleanupConnectionTracker();
       socket.off('connect', onConnect);
-      socket.off('disconnect', onDisconnect);
       socket.off(SERVER_EVENTS.SESSION_ISSUED, onSessionIssued);
       socket.off(SERVER_EVENTS.ROOM_VIEW, onRoomView);
       socket.off(SERVER_EVENTS.ERROR, onError);
@@ -125,6 +130,9 @@ export function App() {
     updateSocketAuth('');
   };
 
+  // Derive active connection state: true if either tracking state or socket itself is connected
+  const isCurrentlyConnected = isSocketConnected || Boolean(socket.connected);
+
   return (
     <main className="min-h-screen bg-slate-900 flex flex-col items-center justify-center relative overflow-hidden">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
@@ -133,7 +141,7 @@ export function App() {
         <LobbyScreen
           roomView={roomView}
           currentPlayerId={session.playerId}
-          isSocketConnected={isSocketConnected}
+          isSocketConnected={isCurrentlyConnected}
           onLeaveRoom={handleLeaveRoom}
           onInfoToast={(msg) => addToast(msg, 'info')}
           onErrorToast={(msg) => addToast(msg, 'error')}

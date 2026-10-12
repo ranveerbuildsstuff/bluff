@@ -48,3 +48,16 @@
   - [apps/server/src/room-manager.ts](file:///e:/ranveer/BLUFF/apps/server/src/room-manager.ts)
   - [apps/server/src/socket/index.ts](file:///e:/ranveer/BLUFF/apps/server/src/socket/index.ts)
   - [apps/server/src/__tests__/leave-and-disconnect.test.ts](file:///e:/ranveer/BLUFF/apps/server/src/__tests__/leave-and-disconnect.test.ts)
+
+### Fix (Slice 1): Connection status indicator
+- **What was fixed/built**:
+  - Resolved issue where connection indicator stuck on "Reconnecting..." in Chrome/Edge even while receiving updates.
+  - Initial state sync on mount in `setupConnectionTracker` so existing connections aren't missed if `connect` fired prior to listener attachment or across React StrictMode remounts.
+  - Added listeners across socket (`connect`, `disconnect`, `connect_error`) and manager (`reconnect`, `reconnect_attempt`, `reconnect_error`, `reconnect_failed`).
+  - Derived connection status directly from `socket.connected` (`isSocketConnected || socket.connected`) and re-synced status whenever room view updates or session events arrive over the wire.
+  - Added Vitest unit test suite for connection tracker logic.
+- **Key file paths**:
+  - [apps/web/src/connection-tracker.ts](file:///e:/ranveer/BLUFF/apps/web/src/connection-tracker.ts)
+  - [apps/web/src/App.tsx](file:///e:/ranveer/BLUFF/apps/web/src/App.tsx)
+  - [apps/web/src/socket.ts](file:///e:/ranveer/BLUFF/apps/web/src/socket.ts)
+  - [apps/web/src/__tests__/connection-tracker.test.ts](file:///e:/ranveer/BLUFF/apps/web/src/__tests__/connection-tracker.test.ts)

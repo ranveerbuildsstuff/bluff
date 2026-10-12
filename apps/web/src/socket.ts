@@ -19,12 +19,13 @@ export function updateSocketAuth(sessionToken: string): void {
   socket.auth = { sessionToken };
 }
 
-export function setupVisibilityReconnect(): () => void {
+export function setupVisibilityReconnect(onSync?: () => void): () => void {
   const handleVisibilityChange = () => {
     if (document.visibilityState === 'visible') {
       if (!socket.connected) {
         socket.connect();
       }
+      onSync?.();
       const session = getSession();
       if (session) {
         socket.emit(CLIENT_EVENTS.GET_ROOM_VIEW, {});
