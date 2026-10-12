@@ -1,12 +1,15 @@
 import {
   Card,
   GameState,
+  PileEntry,
   PublicGameState,
   PublicPileView,
   PublicPlayerView,
   Rank,
   RANKS,
+  RoomStatus,
   SUITS,
+  getNextRank,
 } from '@bluff/shared';
 
 export function createDeck(): Card[] {
@@ -153,4 +156,123 @@ export function toPublicState(
     winnerId: state.winnerId,
     serverNow: now,
   };
+}
+
+export type PlayTurnResult =
+  | { ok: true; state: GameState }
+  | {
+      ok: false;
+      code:
+        | 'GAME_NOT_PLAYING'
+        | 'NOT_YOUR_TURN'
+        | 'INVALID_CARD_COUNT'
+        | 'DUPLICATE_CARDS'
+        | 'PLAYER_NOT_FOUND'
+        | 'CARD_NOT_IN_HAND';
+      message: string;
+    };
+
+export function playTurn(
+  state: GameState,
+  playerId: string,
+  cardIds: readonly string[]
+): PlayTurnResult {
+  if (state.status !== 'PLAYING') {
+    return {
+      ok: false,
+      code: 'GAME_NOT_PLAYING',
+      message: `Cannot play cards when game status is ${state.status}`,
+    };
+  }
+
+  if (playerId !== state.currentTurnId) {
+    return {
+      ok: false,
+      code: 'NOT_YOUR_TURN',
+      message: 'It is not your turn',
+    };
+  }
+
+  if (cardIds.length < 1 || cardIds.length > 4) {
+    return {
+      ok: false,
+      code: 'INVALID_CARD_COUNT',
+      message: 'Must play between 1 and 4 cards',
+    };
+  }
+
+  const uniqueIds = new Set(cardIds);
+  if (uniqueIds.size !== cardIds.length) {
+    return {
+      ok: false,
+      code: 'DUPLICATE_CARDS',
+      message: 'Card IDs must be unique',
+    };
+  }
+
+  const player = state.players.find((p) => p.playerId === playerId);
+  if (!player) {
+    return {
+      ok: false,
+      code: 'PLAYER_NOT_FOUND',
+      message: 'Player not found in game',
+    };
+  }
+
+  const handMap = new Map<string, Card>(player.hand.map((c) => [c.id, c]));
+  const playedCards: Card[] = [];
+  for (const id of cardIds) {
+    const card = handMap.get(id);
+    if (!card) {
+      return {
+        ok: false,
+        code: 'CARD_NOT_IN_HAND',
+        message: `Card ${id} is not in player hand`,
+      };
+    }
+    playedCards.push(card);
+  }
+
+  const remainingHand = player.hand.filter((c) => !uniqueIds.has(c.id));
+  const nextPlaySeq = state.playSeq + 1;
+
+  const pileEntry: PileEntry = {
+    playSeq: nextPlaySeq,
+    playerId,
+    cards: playedCards,
+    declaredRank: state.requiredRank,
+    count: playedCards.length,
+  };
+
+  const nextPile = [...state.centralPile, pileEntry];
+  const nextRequiredRank = getNextRank(state.requiredRank);
+
+  const currentTurnIdx = state.turnOrder.indexOf(playerId);
+  const nextTurnIdx = (currentTurnIdx + 1) % state.turnOrder.length;
+  const nextTurnId = state.turnOrder[nextTurnIdx];
+
+  const updatedPlayers = state.players.map((p) =>
+    p.playerId === playerId ? { ...p, hand: remainingHand } : p
+  );
+
+  let nextStatus: RoomStatus = state.status;
+  let nextWinnerId = state.winnerId;
+
+  if (remainingHand.length === 0) {
+    nextStatus = 'FINAL_CALL';
+    nextWinnerId = playerId;
+  }
+
+  const nextState: GameState = {
+    ...state,
+    status: nextStatus,
+    players: updatedPlayers,
+    playSeq: nextPlaySeq,
+    centralPile: nextPile,
+    requiredRank: nextRequiredRank,
+    currentTurnId: nextTurnId,
+    winnerId: nextWinnerId,
+  };
+
+  return { ok: true, state: nextState };
 }

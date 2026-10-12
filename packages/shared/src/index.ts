@@ -225,6 +225,19 @@ export type GetRoomViewRequest = z.infer<typeof GetRoomViewRequestSchema>;
 export const LeaveRoomRequestSchema = z.object({}).strict();
 export type LeaveRoomRequest = z.infer<typeof LeaveRoomRequestSchema>;
 
+export const PlayTurnRequestSchema = z
+  .object({
+    selectedCardIds: z
+      .array(z.string().min(1))
+      .min(1, 'Must select at least 1 card')
+      .max(4, 'Cannot select more than 4 cards')
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: 'Card IDs must be unique',
+      }),
+  })
+  .strict();
+export type PlayTurnRequest = z.infer<typeof PlayTurnRequestSchema>;
+
 // Socket Event Names
 export const CLIENT_EVENTS = {
   CREATE_ROOM: 'create_room',
@@ -233,6 +246,7 @@ export const CLIENT_EVENTS = {
   LEAVE_ROOM: 'leave_room',
   UPDATE_SETTINGS: 'update_settings',
   START_GAME: 'start_game',
+  PLAY_TURN: 'play_turn',
 } as const;
 
 export const SERVER_EVENTS = {
@@ -284,4 +298,10 @@ export function sortCards(cards: Card[]): Card[] {
     if (rankDiff !== 0) return rankDiff;
     return SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit];
   });
+}
+
+export function getNextRank(currentRank: Rank): Rank {
+  const currentIndex = RANKS.indexOf(currentRank);
+  if (currentIndex === -1) return 'A';
+  return RANKS[(currentIndex + 1) % RANKS.length];
 }

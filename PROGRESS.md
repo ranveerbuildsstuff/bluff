@@ -3,7 +3,7 @@
 ## Slices
 - [x] Slice 1: Scaffold, identity & lobby
 - [x] Slice 2: Game setup, host settings & hidden information
-- [ ] Slice 3: Play loop
+- [x] Slice 3: Play loop
 - [ ] Slice 4: Challenge engine, final call & win
 - [ ] Slice 5: Reconnection, hardening & proof
 
@@ -90,3 +90,34 @@
   - Client -> Server: `update_settings`, `start_game`
   - Server -> Client: `settings_clamped`, `game_state`
 - **Deviations**: None.
+
+### Slice 3: Play loop
+- **What was built**:
+  - Shared strict Zod schema `PlayTurnRequestSchema`: `selectedCardIds: string[]` (1 to 4 unique strings). Strict schema rejects any `declaredRank` or unrecognized keys.
+  - Rank cycle helper `getNextRank(currentRank)` advancing `A, 2...K` and wrapping `K -> A`.
+  - Pure engine module `apps/server/src/engine/game.ts`: `playTurn(state, playerId, cardIds)`:
+    - Validates status is `PLAYING`, player is `currentTurnId`, card count is 1..4, card ids unique, and all cards exist in the player's hand.
+    - Pure mutation removing played cards from hand, incrementing `playSeq`, pushing new `PileEntry` `{ playSeq, playerId, cards, declaredRank: state.requiredRank, count }`, advancing `requiredRank` (wrapping K -> A), and rotating `currentTurnId` in `turnOrder` (wrapping around).
+    - Detects empty hand condition: transitions `status` to `'FINAL_CALL'` and records `winnerId` as pending winner.
+  - `RoomManager.playTurn`: delegates to engine, updates room game state and room status.
+  - Server Socket.io handler: `play_turn` event validated via `handle()`. Rejections emit typed `ErrorEvent` to that socket only. Valid plays emit `ROOM_VIEW` and `emitGameState` to broadcast hidden state to all room players.
+  - Web UI (`GameScreen.tsx`):
+    - Tap-to-toggle card selection (up to 4 cards max; selected cards lift with CSS transition, border highlight, and amber glow).
+    - Sticky bottom action bar displaying dynamic label: `"Play 2 cards as 7s"` (using server's required rank), enabled only on your turn with 1–4 cards selected.
+    - Central pile announces last play: `"<PlayerName> played 2 x 7s"`.
+    - Obvious "YOUR TURN" status banner with high-contrast indicator.
+    - Clears selection after a successful play. No optimistic updates; client waits strictly for authoritative server game state.
+  - Vitest test suite (`slice3-play-loop.test.ts`) covering all 10 requirements: valid play updates (hand, pile, playSeq, turn, rank), wrong turn rejection, missing card in hand rejection, duplicate IDs rejection, 0 and 5 cards rejection, rank wrap K -> A, turn order wrap, FINAL_CALL transition on empty hand, strict schema rejection of declaredRank and unknown keys, and privacy leak checks.
+- **Key file paths**:
+  - [packages/shared/src/index.ts](file:///e:/ranveer/BLUFF/packages/shared/src/index.ts)
+  - [apps/server/src/engine/game.ts](file:///e:/ranveer/BLUFF/apps/server/src/engine/game.ts)
+  - [apps/server/src/room-manager.ts](file:///e:/ranveer/BLUFF/apps/server/src/room-manager.ts)
+  - [apps/server/src/socket/index.ts](file:///e:/ranveer/BLUFF/apps/server/src/socket/index.ts)
+  - [apps/web/src/components/GameScreen.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/GameScreen.tsx)
+  - [apps/web/src/App.tsx](file:///e:/ranveer/BLUFF/apps/web/src/App.tsx)
+  - [apps/server/src/__tests__/slice3-play-loop.test.ts](file:///e:/ranveer/BLUFF/apps/server/src/__tests__/slice3-play-loop.test.ts)
+- **Event names**:
+  - Client -> Server: `play_turn`
+  - Server -> Client: `game_state`, `error`
+- **Deviations**: None.
+

@@ -8,6 +8,7 @@ import {
   LeaveRoomRequestSchema,
   UpdateSettingsRequestSchema,
   StartGameRequestSchema,
+  PlayTurnRequestSchema,
 } from '@bluff/shared';
 import { handle } from './handle.js';
 import { RoomManager } from '../room-manager.js';
@@ -189,6 +190,42 @@ export function setupSocketServer(io: SocketIOServer, roomManager: RoomManager):
         }
 
         const result = roomManager.startGame(found.room.roomCode, found.player.playerId);
+        if (!result.ok) {
+          socket.emit(SERVER_EVENTS.ERROR, {
+            code: result.code,
+            message: result.message,
+          });
+          return;
+        }
+
+        io.to(found.room.roomCode).emit(SERVER_EVENTS.ROOM_VIEW, toRoomView(found.room));
+        emitGameState(io, roomManager, found.room.roomCode);
+      })
+    );
+
+    socket.on(
+      CLIENT_EVENTS.PLAY_TURN,
+      handle(socket, PlayTurnRequestSchema, (data) => {
+        const found =
+          roomManager.findBySocketId(socket.id) ||
+          (typeof socket.handshake.auth?.sessionToken === 'string'
+            ? roomManager.findBySessionToken(socket.handshake.auth.sessionToken)
+            : null);
+
+        if (!found) {
+          socket.emit(SERVER_EVENTS.ERROR, {
+            code: 'NOT_IN_ROOM',
+            message: 'Player is not in any room',
+          });
+          return;
+        }
+
+        const result = roomManager.playTurn(
+          found.room.roomCode,
+          found.player.playerId,
+          data.selectedCardIds
+        );
+
         if (!result.ok) {
           socket.emit(SERVER_EVENTS.ERROR, {
             code: result.code,

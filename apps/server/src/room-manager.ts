@@ -10,7 +10,11 @@ import {
   JoinRoomResult,
   UpdateSettingsResult,
 } from './engine/room.js';
-import { startGame as engineStartGame } from './engine/game.js';
+import {
+  startGame as engineStartGame,
+  playTurn as enginePlayTurn,
+  PlayTurnResult,
+} from './engine/game.js';
 import { generateUniqueRoomCode } from './engine/room-code.js';
 import { GameState, maxCardsPerPlayer } from '@bluff/shared';
 
@@ -173,6 +177,44 @@ export class RoomManager {
     room.gameState = gameState;
 
     return { ok: true, gameState, room };
+  }
+
+  public playTurn(
+    roomCode: string,
+    playerId: string,
+    cardIds: readonly string[]
+  ):
+    | PlayTurnResult
+    | {
+        ok: false;
+        code: 'ROOM_NOT_FOUND' | 'NO_ACTIVE_GAME';
+        message: string;
+      } {
+    const code = roomCode.toUpperCase();
+    const room = this.rooms.get(code);
+    if (!room) {
+      return {
+        ok: false,
+        code: 'ROOM_NOT_FOUND',
+        message: `Room "${code}" does not exist`,
+      };
+    }
+
+    if (!room.gameState) {
+      return {
+        ok: false,
+        code: 'NO_ACTIVE_GAME',
+        message: 'No active game in this room',
+      };
+    }
+
+    const result = enginePlayTurn(room.gameState, playerId, cardIds);
+    if (result.ok) {
+      room.gameState = result.state;
+      room.status = result.state.status;
+    }
+
+    return result;
   }
 
   public leaveRoom(

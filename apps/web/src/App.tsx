@@ -167,6 +167,10 @@ export function App() {
     updateSocketAuth('');
   };
 
+  const handlePlayTurn = (selectedCardIds: string[]) => {
+    socket.emit(CLIENT_EVENTS.PLAY_TURN, { selectedCardIds });
+  };
+
   const isCurrentlyConnected = isSocketConnected || Boolean(socket.connected);
 
   return (
@@ -180,6 +184,7 @@ export function App() {
             currentPlayerId={session.playerId}
             isSocketConnected={isCurrentlyConnected}
             onLeaveRoom={handleLeaveRoom}
+            onPlayTurn={handlePlayTurn}
           />
         ) : (
           <LobbyScreen
