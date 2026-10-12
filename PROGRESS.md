@@ -2,7 +2,7 @@
 
 ## Slices
 - [x] Slice 1: Scaffold, identity & lobby
-- [ ] Slice 2: Game setup, host settings & hidden information
+- [x] Slice 2: Game setup, host settings & hidden information
 - [ ] Slice 3: Play loop
 - [ ] Slice 4: Challenge engine, final call & win
 - [ ] Slice 5: Reconnection, hardening & proof
@@ -61,3 +61,32 @@
   - [apps/web/src/App.tsx](file:///e:/ranveer/BLUFF/apps/web/src/App.tsx)
   - [apps/web/src/socket.ts](file:///e:/ranveer/BLUFF/apps/web/src/socket.ts)
   - [apps/web/src/__tests__/connection-tracker.test.ts](file:///e:/ranveer/BLUFF/apps/web/src/__tests__/connection-tracker.test.ts)
+
+### Slice 2: Game setup, host settings & hidden information
+- **What was built**:
+  - Shared Zod schemas + inferred types for `Card` (ids like `H-7`, `S-K`), `Suit`, `Rank`, `PileEntry`, `Player`, `GameState`, `PublicGameState`, `PublicPlayerView`, `PublicPileView`, `RoomSettings`, `UpdateSettingsRequest`, `StartGameRequest`, and `SettingsClamped`.
+  - Helpers `maxCardsPerPlayer(playerCount)` and `recommendedCardsPerPlayer(playerCount)` exported from `@bluff/shared` so UI and server share identical calculations.
+  - Deterministic card sorting `sortCards(cards)` ordering by Rank (A..K) then Suit (H, D, C, S).
+  - Pure engine module `apps/server/src/engine/game.ts`: `createDeck()` (52 cards), `shuffle(cards, rng)` (Fisher-Yates), `dealCards(deck, playerIds, cardsPerPlayer)` (round-robin dealing, undealt cards discarded), `startGame(room, rng)` (random first player, `requiredRank = 'A'`, `playSeq = 0`), and `toPublicState(state, viewerId)` (security boundary).
+  - Security boundary: viewers receive only their own hand; opponents receive only `handCount`; pile entries show only card count and last play summary without card identities; `sessionToken` is never included.
+  - Host settings management: tracking `cardsPerPlayerSource: 'auto' | 'host'`. Auto updates follow recommended value on join/leave. When in host mode, joining players that reduce max below current setting automatically clamp the setting to the new max and emit `settings_clamped` to the host.
+  - `start_game` event: host-only, requires at least 2 players in LOBBY, re-validates `cardsPerPlayer <= maxCardsPerPlayer`, transitions status to `PLAYING`, emits `room_view`, and calls `emitGameState(roomCode)` to push individual hidden-state views to all sockets.
+  - Web UI:
+    - Lobby: Host controls with preset chips (5 / 7 / 10), recommended badge, disabled state when above max, custom stepper (3 to max) with "max N" indicator, and "Deal & Start Game" button (disabled if < 2 players). Non-hosts see read-only settings view.
+    - Game screen (`GameScreen.tsx`): Required rank banner, turn status indicator, face-down central pile stack with count, opponents grid with live connection dots, card counts, and turn highlight, plus player's hand as mobile-optimized CSS cards with 44px+ touch targets and rank/suit sorting.
+  - Comprehensive tests in `slice2-game-setup.test.ts` and `slice2-socket-integration.test.ts` covering 52 unique cards, seeded Fisher-Yates permutation, max cards formula for 2–8 players, recommended helper bounds, round-robin dealing, non-host rejection, clamp-on-join, full socket integration, and leak assertion test proving zero other card identities and zero session tokens leak across the wire.
+- **Key file paths**:
+  - [packages/shared/src/index.ts](file:///e:/ranveer/BLUFF/packages/shared/src/index.ts)
+  - [apps/server/src/engine/game.ts](file:///e:/ranveer/BLUFF/apps/server/src/engine/game.ts)
+  - [apps/server/src/engine/room.ts](file:///e:/ranveer/BLUFF/apps/server/src/engine/room.ts)
+  - [apps/server/src/room-manager.ts](file:///e:/ranveer/BLUFF/apps/server/src/room-manager.ts)
+  - [apps/server/src/socket/index.ts](file:///e:/ranveer/BLUFF/apps/server/src/socket/index.ts)
+  - [apps/web/src/components/LobbyScreen.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/LobbyScreen.tsx)
+  - [apps/web/src/components/GameScreen.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/GameScreen.tsx)
+  - [apps/web/src/App.tsx](file:///e:/ranveer/BLUFF/apps/web/src/App.tsx)
+  - [apps/server/src/__tests__/slice2-game-setup.test.ts](file:///e:/ranveer/BLUFF/apps/server/src/__tests__/slice2-game-setup.test.ts)
+  - [apps/server/src/__tests__/slice2-socket-integration.test.ts](file:///e:/ranveer/BLUFF/apps/server/src/__tests__/slice2-socket-integration.test.ts)
+- **Event names**:
+  - Client -> Server: `update_settings`, `start_game`
+  - Server -> Client: `settings_clamped`, `game_state`
+- **Deviations**: None.

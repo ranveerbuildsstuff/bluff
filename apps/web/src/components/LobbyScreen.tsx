@@ -1,11 +1,17 @@
 import React from 'react';
-import { RoomView } from '@bluff/shared';
+import {
+  RoomView,
+  maxCardsPerPlayer,
+  recommendedCardsPerPlayer,
+} from '@bluff/shared';
 
 interface LobbyScreenProps {
   roomView: RoomView;
   currentPlayerId: string;
   isSocketConnected: boolean;
   onLeaveRoom: () => void;
+  onUpdateSettings: (cardsPerPlayer: number) => void;
+  onStartGame: () => void;
   onInfoToast: (message: string) => void;
   onErrorToast: (message: string) => void;
 }
@@ -15,10 +21,16 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   currentPlayerId,
   isSocketConnected,
   onLeaveRoom,
+  onUpdateSettings,
+  onStartGame,
   onInfoToast,
   onErrorToast,
 }) => {
   const isHost = roomView.hostId === currentPlayerId;
+  const playerCount = roomView.players.length;
+  const maxAllowed = maxCardsPerPlayer(playerCount);
+  const recommended = recommendedCardsPerPlayer(playerCount);
+  const currentCards = roomView.settings.cardsPerPlayer;
 
   const handleShare = async () => {
     const textToShare = `Join my Bluff game! Code: ${roomView.roomCode}`;
@@ -31,7 +43,6 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         });
         return;
       } catch (err) {
-        // User cancelled or share failed, fallback to clipboard
         if (err instanceof Error && err.name === 'AbortError') {
           return;
         }
@@ -50,6 +61,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
       onInfoToast(`Room Code: ${roomView.roomCode}`);
     }
   };
+
+  const presets = [5, 7, 10];
 
   return (
     <div className="w-full max-w-[360px] mx-auto px-4 py-6 flex flex-col justify-between min-h-[640px]">
@@ -71,13 +84,14 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             type="button"
             onClick={onLeaveRoom}
             className="text-xs font-semibold text-rose-400 hover:text-rose-300 active:text-rose-500 px-3 py-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 min-h-[44px] flex items-center justify-center transition-colors"
+            style={{ touchAction: 'manipulation' }}
           >
             Leave Lobby
           </button>
         </div>
 
         {/* Room Code Showcase */}
-        <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-5 shadow-xl text-center mb-6">
+        <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-5 shadow-xl text-center mb-5">
           <span className="text-xs uppercase font-bold tracking-widest text-slate-400 block mb-1">
             Room Code
           </span>
@@ -89,6 +103,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             type="button"
             onClick={handleShare}
             className="mt-3 w-full px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold text-sm shadow-md shadow-indigo-600/20 min-h-[44px] flex items-center justify-center gap-2 transition-colors"
+            style={{ touchAction: 'manipulation' }}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
@@ -102,8 +117,108 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           </button>
         </div>
 
+        {/* Host Settings / Game Setup */}
+        <div className="bg-slate-800/80 border border-slate-700/70 rounded-2xl p-4 shadow-lg mb-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-300">
+              Cards Per Player
+            </h2>
+            <span className="text-[11px] font-semibold text-slate-400">
+              max {maxAllowed}
+            </span>
+          </div>
+
+          {isHost ? (
+            <div className="space-y-3">
+              {/* Preset Chips */}
+              <div className="grid grid-cols-3 gap-2">
+                {presets.map((preset) => {
+                  const isDisabled = preset > maxAllowed;
+                  const isSelected = preset === currentCards;
+                  const isRec = preset === recommended;
+
+                  return (
+                    <button
+                      key={preset}
+                      type="button"
+                      disabled={isDisabled}
+                      onClick={() => onUpdateSettings(preset)}
+                      style={{ touchAction: 'manipulation' }}
+                      className={`relative min-h-[44px] rounded-xl flex flex-col items-center justify-center p-1.5 font-bold transition-all border ${
+                        isDisabled
+                          ? 'bg-slate-900/40 border-slate-800 text-slate-600 cursor-not-allowed opacity-50'
+                          : isSelected
+                          ? 'bg-indigo-600/30 border-indigo-400 text-white shadow-md shadow-indigo-600/20 ring-1 ring-indigo-400'
+                          : 'bg-slate-700/60 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-slate-500 active:bg-slate-800'
+                      }`}
+                    >
+                      <span className="text-sm">{preset}</span>
+                      {isRec && (
+                        <span className="text-[9px] font-medium text-emerald-400 leading-tight">
+                          recommended
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Stepper Control */}
+              <div className="flex items-center justify-between bg-slate-900/60 rounded-xl p-2 border border-slate-700/60">
+                <button
+                  type="button"
+                  disabled={currentCards <= 3}
+                  onClick={() => onUpdateSettings(currentCards - 1)}
+                  style={{ touchAction: 'manipulation' }}
+                  className="w-11 h-11 rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-lg font-bold border border-slate-700 transition-colors"
+                  aria-label="Decrease cards"
+                >
+                  −
+                </button>
+
+                <div className="flex flex-col items-center">
+                  <span className="font-mono text-xl font-extrabold text-white">
+                    {currentCards}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-medium">
+                    cards each
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={currentCards >= maxAllowed}
+                  onClick={() => onUpdateSettings(currentCards + 1)}
+                  style={{ touchAction: 'manipulation' }}
+                  className="w-11 h-11 rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-lg font-bold border border-slate-700 transition-colors"
+                  aria-label="Increase cards"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Read-only for non-hosts */
+            <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-slate-700/60">
+              <span className="text-sm font-semibold text-slate-300">
+                Dealing
+              </span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-base font-bold text-indigo-300">
+                  {currentCards} cards each
+                </span>
+                {currentCards === recommended && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    recommended
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Player List */}
-        <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl p-4 shadow-lg">
+        <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl p-4 shadow-lg mb-6">
           <div className="flex items-center justify-between mb-3 px-1">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-300">
               Players
@@ -129,7 +244,6 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   style={{ minHeight: '44px' }}
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    {/* Status Dot */}
                     <span
                       title={player.connected ? 'Connected' : 'Offline'}
                       className={`w-2.5 h-2.5 rounded-full shrink-0 ${
@@ -173,13 +287,32 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         </div>
       </div>
 
-      {/* Footer Info */}
-      <div className="text-center mt-6">
-        <p className="text-xs text-slate-400">
-          {isHost
-            ? 'Waiting for players to join before starting...'
-            : 'Waiting for the host to start the game...'}
-        </p>
+      {/* Footer / Host Start Game Action */}
+      <div className="mt-4">
+        {isHost ? (
+          <div>
+            <button
+              type="button"
+              disabled={playerCount < 2}
+              onClick={onStartGame}
+              style={{ touchAction: 'manipulation' }}
+              className="w-full min-h-[48px] rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-base shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2"
+            >
+              <span>Deal & Start Game</span>
+            </button>
+            {playerCount < 2 && (
+              <p className="text-center text-xs text-slate-400 mt-2">
+                Need at least 2 players to start
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="text-center">
+            <p className="text-xs text-slate-400">
+              Waiting for the host to start the game...
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

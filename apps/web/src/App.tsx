@@ -4,8 +4,11 @@ import {
   SERVER_EVENTS,
   SessionIssued,
   RoomView,
+  PublicGameState,
   SessionIssuedSchema,
   RoomViewSchema,
+  PublicGameStateSchema,
+  SettingsClampedSchema,
   ErrorEventSchema,
 } from '@bluff/shared';
 import { socket, updateSocketAuth, setupVisibilityReconnect } from './socket';
@@ -19,13 +22,17 @@ import {
 } from './storage';
 import { LandingScreen } from './components/LandingScreen';
 import { LobbyScreen } from './components/LobbyScreen';
+import { GameScreen } from './components/GameScreen';
 import { ToastContainer, ToastItem } from './components/ToastContainer';
 
 export function App() {
   const [session, setSession] = useState<SessionIssued | null>(() => getSession());
   const [roomView, setRoomView] = useState<RoomView | null>(null);
+  const [gameState, setGameState] = useState<PublicGameState | null>(null);
   const [savedName, setSavedName] = useState<string>(() => getSavedName());
-  const [isSocketConnected, setIsSocketConnected] = useState<boolean>(() => Boolean(socket.connected));
+  const [isSocketConnected, setIsSocketConnected] = useState<boolean>(() =>
+    Boolean(socket.connected)
+  );
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   const addToast = useCallback((message: string, type: 'error' | 'info' = 'error') => {
@@ -65,11 +72,26 @@ export function App() {
     };
 
     const onRoomView = (data: unknown) => {
-      // Re-sync connection status whenever a room update arrives
       setIsSocketConnected(Boolean(socket.connected || true));
       const parsed = RoomViewSchema.safeParse(data);
       if (!parsed.success) return;
       setRoomView(parsed.data);
+    };
+
+    const onGameState = (data: unknown) => {
+      setIsSocketConnected(Boolean(socket.connected || true));
+      const parsed = PublicGameStateSchema.safeParse(data);
+      if (!parsed.success) return;
+      setGameState(parsed.data);
+    };
+
+    const onSettingsClamped = (data: unknown) => {
+      const parsed = SettingsClampedSchema.safeParse(data);
+      if (!parsed.success) return;
+      addToast(
+        `Cards per player adjusted to ${parsed.data.cardsPerPlayer} (room limit)`,
+        'info'
+      );
     };
 
     const onError = (data: unknown) => {
@@ -77,11 +99,14 @@ export function App() {
       const message = parsed.success ? parsed.data.message : 'An error occurred';
       addToast(message, 'error');
 
-      if (parsed.success && (parsed.data.code === 'NOT_IN_ROOM' || parsed.data.code === 'ROOM_NOT_FOUND')) {
-        // If room is invalid or gone, clear session
+      if (
+        parsed.success &&
+        (parsed.data.code === 'NOT_IN_ROOM' || parsed.data.code === 'ROOM_NOT_FOUND')
+      ) {
         clearSession();
         setSession(null);
         setRoomView(null);
+        setGameState(null);
         updateSocketAuth('');
       }
     };
@@ -89,9 +114,10 @@ export function App() {
     socket.on('connect', onConnect);
     socket.on(SERVER_EVENTS.SESSION_ISSUED, onSessionIssued);
     socket.on(SERVER_EVENTS.ROOM_VIEW, onRoomView);
+    socket.on(SERVER_EVENTS.GAME_STATE, onGameState);
+    socket.on(SERVER_EVENTS.SETTINGS_CLAMPED, onSettingsClamped);
     socket.on(SERVER_EVENTS.ERROR, onError);
 
-    // Initial query if we already have a session
     if (socket.connected && session) {
       socket.emit(CLIENT_EVENTS.GET_ROOM_VIEW, {});
     }
@@ -105,6 +131,8 @@ export function App() {
       socket.off('connect', onConnect);
       socket.off(SERVER_EVENTS.SESSION_ISSUED, onSessionIssued);
       socket.off(SERVER_EVENTS.ROOM_VIEW, onRoomView);
+      socket.off(SERVER_EVENTS.GAME_STATE, onGameState);
+      socket.off(SERVER_EVENTS.SETTINGS_CLAMPED, onSettingsClamped);
       socket.off(SERVER_EVENTS.ERROR, onError);
       cleanupReconnect();
     };
@@ -122,15 +150,23 @@ export function App() {
     socket.emit(CLIENT_EVENTS.JOIN_ROOM, { roomCode, playerName });
   };
 
+  const handleUpdateSettings = (cardsPerPlayer: number) => {
+    socket.emit(CLIENT_EVENTS.UPDATE_SETTINGS, { cardsPerPlayer });
+  };
+
+  const handleStartGame = () => {
+    socket.emit(CLIENT_EVENTS.START_GAME, {});
+  };
+
   const handleLeaveRoom = () => {
     socket.emit(CLIENT_EVENTS.LEAVE_ROOM, {});
     clearSession();
     setSession(null);
     setRoomView(null);
+    setGameState(null);
     updateSocketAuth('');
   };
 
-  // Derive active connection state: true if either tracking state or socket itself is connected
   const isCurrentlyConnected = isSocketConnected || Boolean(socket.connected);
 
   return (
@@ -138,14 +174,25 @@ export function App() {
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       {roomView && session ? (
-        <LobbyScreen
-          roomView={roomView}
-          currentPlayerId={session.playerId}
-          isSocketConnected={isCurrentlyConnected}
-          onLeaveRoom={handleLeaveRoom}
-          onInfoToast={(msg) => addToast(msg, 'info')}
-          onErrorToast={(msg) => addToast(msg, 'error')}
-        />
+        roomView.status === 'PLAYING' && gameState ? (
+          <GameScreen
+            gameState={gameState}
+            currentPlayerId={session.playerId}
+            isSocketConnected={isCurrentlyConnected}
+            onLeaveRoom={handleLeaveRoom}
+          />
+        ) : (
+          <LobbyScreen
+            roomView={roomView}
+            currentPlayerId={session.playerId}
+            isSocketConnected={isCurrentlyConnected}
+            onLeaveRoom={handleLeaveRoom}
+            onUpdateSettings={handleUpdateSettings}
+            onStartGame={handleStartGame}
+            onInfoToast={(msg) => addToast(msg, 'info')}
+            onErrorToast={(msg) => addToast(msg, 'error')}
+          />
+        )
       ) : (
         <LandingScreen
           initialName={savedName}

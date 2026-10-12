@@ -6,15 +6,48 @@ import {
   JoinRoomRequestSchema,
   GetRoomViewRequestSchema,
   LeaveRoomRequestSchema,
+  UpdateSettingsRequestSchema,
+  StartGameRequestSchema,
 } from '@bluff/shared';
 import { handle } from './handle.js';
 import { RoomManager } from '../room-manager.js';
 import { toRoomView } from '../engine/room.js';
+import { toPublicState } from '../engine/game.js';
+
+export function emitGameState(
+  io: SocketIOServer,
+  roomManager: RoomManager,
+  roomCode: string
+): void {
+  const room = roomManager.getRoom(roomCode);
+  if (!room || !room.gameState) return;
+
+  const connectedMap: Record<string, boolean> = {};
+  for (const p of room.players) {
+    connectedMap[p.playerId] = p.connected;
+  }
+
+  const now = Date.now();
+  for (const player of room.players) {
+    if (player.socketId) {
+      const publicState = toPublicState(
+        room.gameState,
+        player.playerId,
+        connectedMap,
+        now
+      );
+      io.to(player.socketId).emit(SERVER_EVENTS.GAME_STATE, publicState);
+    }
+  }
+}
 
 export function setupSocketServer(io: SocketIOServer, roomManager: RoomManager): void {
   roomManager.setOnRoomChange((room) => {
     if (room) {
       io.to(room.roomCode).emit(SERVER_EVENTS.ROOM_VIEW, toRoomView(room));
+      if (room.gameState) {
+        emitGameState(io, roomManager, room.roomCode);
+      }
     }
   });
 
@@ -31,6 +64,20 @@ export function setupSocketServer(io: SocketIOServer, roomManager: RoomManager):
           roomCode: room.roomCode,
         });
         io.to(room.roomCode).emit(SERVER_EVENTS.ROOM_VIEW, toRoomView(room));
+
+        if (room.status !== 'LOBBY' && room.gameState) {
+          const connectedMap: Record<string, boolean> = {};
+          for (const p of room.players) {
+            connectedMap[p.playerId] = p.connected;
+          }
+          const publicState = toPublicState(
+            room.gameState,
+            player.playerId,
+            connectedMap,
+            Date.now()
+          );
+          socket.emit(SERVER_EVENTS.GAME_STATE, publicState);
+        }
       }
     }
 
@@ -75,7 +122,83 @@ export function setupSocketServer(io: SocketIOServer, roomManager: RoomManager):
           sessionToken: result.player.sessionToken,
           roomCode: room.roomCode,
         });
+
+        if (result.clamped && result.clampedCardsPerPlayer !== undefined) {
+          const hostPlayer = room.players.find((p) => p.playerId === room.hostId);
+          if (hostPlayer?.socketId) {
+            io.to(hostPlayer.socketId).emit(SERVER_EVENTS.SETTINGS_CLAMPED, {
+              cardsPerPlayer: result.clampedCardsPerPlayer,
+            });
+          }
+        }
+
         io.to(room.roomCode).emit(SERVER_EVENTS.ROOM_VIEW, toRoomView(room));
+      })
+    );
+
+    socket.on(
+      CLIENT_EVENTS.UPDATE_SETTINGS,
+      handle(socket, UpdateSettingsRequestSchema, (data) => {
+        const found =
+          roomManager.findBySocketId(socket.id) ||
+          (typeof socket.handshake.auth?.sessionToken === 'string'
+            ? roomManager.findBySessionToken(socket.handshake.auth.sessionToken)
+            : null);
+
+        if (!found) {
+          socket.emit(SERVER_EVENTS.ERROR, {
+            code: 'NOT_IN_ROOM',
+            message: 'Player is not in any room',
+          });
+          return;
+        }
+
+        const result = roomManager.updateSettings(
+          found.room.roomCode,
+          found.player.playerId,
+          data.cardsPerPlayer
+        );
+
+        if (!result.ok) {
+          socket.emit(SERVER_EVENTS.ERROR, {
+            code: result.code,
+            message: result.message,
+          });
+          return;
+        }
+
+        io.to(found.room.roomCode).emit(SERVER_EVENTS.ROOM_VIEW, toRoomView(found.room));
+      })
+    );
+
+    socket.on(
+      CLIENT_EVENTS.START_GAME,
+      handle(socket, StartGameRequestSchema, () => {
+        const found =
+          roomManager.findBySocketId(socket.id) ||
+          (typeof socket.handshake.auth?.sessionToken === 'string'
+            ? roomManager.findBySessionToken(socket.handshake.auth.sessionToken)
+            : null);
+
+        if (!found) {
+          socket.emit(SERVER_EVENTS.ERROR, {
+            code: 'NOT_IN_ROOM',
+            message: 'Player is not in any room',
+          });
+          return;
+        }
+
+        const result = roomManager.startGame(found.room.roomCode, found.player.playerId);
+        if (!result.ok) {
+          socket.emit(SERVER_EVENTS.ERROR, {
+            code: result.code,
+            message: result.message,
+          });
+          return;
+        }
+
+        io.to(found.room.roomCode).emit(SERVER_EVENTS.ROOM_VIEW, toRoomView(found.room));
+        emitGameState(io, roomManager, found.room.roomCode);
       })
     );
 
@@ -89,6 +212,19 @@ export function setupSocketServer(io: SocketIOServer, roomManager: RoomManager):
             : null);
         if (found) {
           socket.emit(SERVER_EVENTS.ROOM_VIEW, toRoomView(found.room));
+          if (found.room.status !== 'LOBBY' && found.room.gameState) {
+            const connectedMap: Record<string, boolean> = {};
+            for (const p of found.room.players) {
+              connectedMap[p.playerId] = p.connected;
+            }
+            const publicState = toPublicState(
+              found.room.gameState,
+              found.player.playerId,
+              connectedMap,
+              Date.now()
+            );
+            socket.emit(SERVER_EVENTS.GAME_STATE, publicState);
+          }
         } else {
           socket.emit(SERVER_EVENTS.ERROR, {
             code: 'NOT_IN_ROOM',
@@ -115,6 +251,9 @@ export function setupSocketServer(io: SocketIOServer, roomManager: RoomManager):
         const outcome = roomManager.leaveRoom(room.roomCode, player.playerId);
         if (outcome.room) {
           io.to(room.roomCode).emit(SERVER_EVENTS.ROOM_VIEW, toRoomView(outcome.room));
+          if (outcome.room.gameState) {
+            emitGameState(io, roomManager, room.roomCode);
+          }
         }
       })
     );
@@ -126,6 +265,9 @@ export function setupSocketServer(io: SocketIOServer, roomManager: RoomManager):
           SERVER_EVENTS.ROOM_VIEW,
           toRoomView(disconnected.room)
         );
+        if (disconnected.room.gameState) {
+          emitGameState(io, roomManager, disconnected.room.roomCode);
+        }
       }
     });
   });

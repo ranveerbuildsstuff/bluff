@@ -2,6 +2,9 @@ import {
   MAX_ROOM_PLAYERS,
   RoomStatus,
   RoomView,
+  GameState,
+  maxCardsPerPlayer,
+  recommendedCardsPerPlayer,
 } from '@bluff/shared';
 import { createPlayerId, createSessionToken } from './identity.js';
 
@@ -18,10 +21,20 @@ export interface RoomState {
   hostId: string;
   status: RoomStatus;
   players: PlayerRecord[];
+  settings: {
+    cardsPerPlayer: number;
+  };
+  cardsPerPlayerSource: 'auto' | 'host';
+  gameState?: GameState | null;
 }
 
 export type JoinRoomResult =
-  | { ok: true; player: PlayerRecord }
+  | {
+      ok: true;
+      player: PlayerRecord;
+      clamped: boolean;
+      clampedCardsPerPlayer?: number;
+    }
   | { ok: false; code: 'ROOM_NOT_IN_LOBBY' | 'ROOM_FULL'; message: string };
 
 export function createRoom(
@@ -42,6 +55,11 @@ export function createRoom(
     hostId: hostPlayer.playerId,
     status: 'LOBBY',
     players: [hostPlayer],
+    settings: {
+      cardsPerPlayer: recommendedCardsPerPlayer(1),
+    },
+    cardsPerPlayerSource: 'auto',
+    gameState: null,
   };
 
   return { room, hostPlayer };
@@ -78,7 +96,27 @@ export function joinRoom(
 
   room.players.push(player);
 
-  return { ok: true, player };
+  const newPlayerCount = room.players.length;
+  let clamped = false;
+  let clampedCardsPerPlayer: number | undefined;
+
+  if (room.cardsPerPlayerSource === 'auto') {
+    room.settings.cardsPerPlayer = recommendedCardsPerPlayer(newPlayerCount);
+  } else {
+    const max = maxCardsPerPlayer(newPlayerCount);
+    if (room.settings.cardsPerPlayer > max) {
+      room.settings.cardsPerPlayer = max;
+      clamped = true;
+      clampedCardsPerPlayer = max;
+    }
+  }
+
+  return {
+    ok: true,
+    player,
+    clamped,
+    clampedCardsPerPlayer,
+  };
 }
 
 export function leaveRoom(
@@ -109,6 +147,10 @@ export function leaveRoom(
     };
   }
 
+  if (room.status === 'LOBBY' && room.cardsPerPlayerSource === 'auto') {
+    room.settings.cardsPerPlayer = recommendedCardsPerPlayer(room.players.length);
+  }
+
   if (wasHost) {
     room.hostId = room.players[0].playerId;
     return {
@@ -122,6 +164,53 @@ export function leaveRoom(
     room,
     transferredHost: false,
     newHostId: room.hostId,
+  };
+}
+
+export type UpdateSettingsResult =
+  | { ok: true; settings: { cardsPerPlayer: number } }
+  | {
+      ok: false;
+      code: 'NOT_HOST' | 'NOT_IN_LOBBY' | 'INVALID_CARDS_PER_PLAYER';
+      message: string;
+    };
+
+export function updateSettings(
+  room: RoomState,
+  requesterPlayerId: string,
+  cardsPerPlayer: number
+): UpdateSettingsResult {
+  if (room.hostId !== requesterPlayerId) {
+    return {
+      ok: false,
+      code: 'NOT_HOST',
+      message: 'Only the host can update room settings',
+    };
+  }
+
+  if (room.status !== 'LOBBY') {
+    return {
+      ok: false,
+      code: 'NOT_IN_LOBBY',
+      message: 'Settings can only be changed in the lobby',
+    };
+  }
+
+  const max = maxCardsPerPlayer(room.players.length);
+  if (!Number.isInteger(cardsPerPlayer) || cardsPerPlayer < 3 || cardsPerPlayer > max) {
+    return {
+      ok: false,
+      code: 'INVALID_CARDS_PER_PLAYER',
+      message: `Cards per player must be an integer between 3 and ${max}`,
+    };
+  }
+
+  room.settings.cardsPerPlayer = cardsPerPlayer;
+  room.cardsPerPlayerSource = 'host';
+
+  return {
+    ok: true,
+    settings: { cardsPerPlayer: room.settings.cardsPerPlayer },
   };
 }
 
@@ -171,5 +260,8 @@ export function toRoomView(room: RoomState): RoomView {
       name: p.name,
       connected: p.connected,
     })),
+    settings: {
+      cardsPerPlayer: room.settings.cardsPerPlayer,
+    },
   };
 }

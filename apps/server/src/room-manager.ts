@@ -4,11 +4,15 @@ import {
   createRoom as engineCreateRoom,
   joinRoom as engineJoinRoom,
   leaveRoom as engineLeaveRoom,
+  updateSettings as engineUpdateSettings,
   disconnectPlayer as engineDisconnectPlayer,
   reattachPlayer as engineReattachPlayer,
   JoinRoomResult,
+  UpdateSettingsResult,
 } from './engine/room.js';
+import { startGame as engineStartGame } from './engine/game.js';
 import { generateUniqueRoomCode } from './engine/room-code.js';
+import { GameState, maxCardsPerPlayer } from '@bluff/shared';
 
 export const ROOM_CLEANUP_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 export const LOBBY_DISCONNECT_TIMEOUT_MS = 60 * 1000; // 60 seconds
@@ -81,6 +85,94 @@ export class RoomManager {
       this.cancelCleanupTimer(code);
     }
     return result;
+  }
+
+  public updateSettings(
+    roomCode: string,
+    requesterPlayerId: string,
+    cardsPerPlayer: number
+  ): UpdateSettingsResult | { ok: false; code: 'ROOM_NOT_FOUND'; message: string } {
+    const code = roomCode.toUpperCase();
+    const room = this.rooms.get(code);
+    if (!room) {
+      return {
+        ok: false,
+        code: 'ROOM_NOT_FOUND',
+        message: `Room "${code}" does not exist`,
+      };
+    }
+
+    return engineUpdateSettings(room, requesterPlayerId, cardsPerPlayer);
+  }
+
+  public startGame(
+    roomCode: string,
+    requesterPlayerId: string,
+    rng: () => number = Math.random
+  ):
+    | { ok: true; gameState: GameState; room: RoomState }
+    | {
+        ok: false;
+        code:
+          | 'ROOM_NOT_FOUND'
+          | 'NOT_HOST'
+          | 'NOT_IN_LOBBY'
+          | 'NOT_ENOUGH_PLAYERS'
+          | 'INVALID_CARDS_PER_PLAYER';
+        message: string;
+      } {
+    const code = roomCode.toUpperCase();
+    const room = this.rooms.get(code);
+    if (!room) {
+      return {
+        ok: false,
+        code: 'ROOM_NOT_FOUND',
+        message: `Room "${code}" does not exist`,
+      };
+    }
+
+    if (room.hostId !== requesterPlayerId) {
+      return {
+        ok: false,
+        code: 'NOT_HOST',
+        message: 'Only the host can start the game',
+      };
+    }
+
+    if (room.status !== 'LOBBY') {
+      return {
+        ok: false,
+        code: 'NOT_IN_LOBBY',
+        message: 'Game can only be started from the lobby',
+      };
+    }
+
+    if (room.players.length < 2) {
+      return {
+        ok: false,
+        code: 'NOT_ENOUGH_PLAYERS',
+        message: 'At least 2 players are required to start the game',
+      };
+    }
+
+    const max = maxCardsPerPlayer(room.players.length);
+    if (
+      !Number.isInteger(room.settings.cardsPerPlayer) ||
+      room.settings.cardsPerPlayer < 3 ||
+      room.settings.cardsPerPlayer > max
+    ) {
+      return {
+        ok: false,
+        code: 'INVALID_CARDS_PER_PLAYER',
+        message: `Invalid cards per player (${room.settings.cardsPerPlayer}). Must be between 3 and ${max}`,
+      };
+    }
+
+    const gameState = engineStartGame(room, rng);
+    room.status = 'PLAYING';
+    room.gameState = gameState;
+
+    return { ok: true, gameState, room };
   }
 
   public leaveRoom(
