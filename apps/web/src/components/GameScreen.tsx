@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { PublicGameState, sortCards, Card, Suit } from '@bluff/shared';
+import { PublicGameState, sortCards, Card, Suit, rankLabel } from '@bluff/shared';
 
 interface GameScreenProps {
   gameState: PublicGameState;
@@ -124,9 +124,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           <span className="text-[10px] uppercase font-bold tracking-widest text-amber-300 block mb-0.5">
             Claim Rank For Next Play
           </span>
-          <div className="flex items-center justify-center gap-2">
-            <span className="text-xs text-slate-300 font-medium">Claim must be:</span>
-            <span className="font-mono text-3xl font-black text-amber-300 px-3 py-0.5 rounded-xl bg-amber-500/20 border border-amber-400/50 shadow-inner">
+          <div className="flex items-center justify-center gap-2.5">
+            <span className="text-sm text-slate-200 font-semibold">
+              Claim must be:{' '}
+              <span className="text-amber-300 font-bold">
+                {rankLabel(gameState.requiredRank, 2)}
+              </span>
+            </span>
+            <span className="font-mono text-2xl font-black text-amber-300 px-2.5 py-0.5 rounded-xl bg-amber-500/20 border border-amber-400/50 shadow-inner">
               {gameState.requiredRank}
             </span>
           </div>
@@ -182,7 +187,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                 </span>{' '}
                 played{' '}
                 <span className="font-bold text-amber-300 font-mono">
-                  {gameState.pile.lastPlay.count} x {gameState.pile.lastPlay.declaredRank}s
+                  {gameState.pile.lastPlay.count} x{' '}
+                  {rankLabel(
+                    gameState.pile.lastPlay.declaredRank,
+                    gameState.pile.lastPlay.count
+                  )}
                 </span>
               </div>
             ) : (
@@ -338,16 +347,26 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             style={{ touchAction: 'manipulation' }}
           >
             {selectedCount > 0 ? (
-              <span>
-                Play {selectedCount} {selectedCount === 1 ? 'card' : 'cards'} as{' '}
-                <span className="font-mono font-extrabold">
-                  {gameState.requiredRank}s
+              selectedCount === 1 ? (
+                <span>
+                  Play 1 card as{' '}
+                  <span className="font-extrabold">
+                    {gameState.requiredRank === 'A' ? 'an' : 'a'}{' '}
+                    {rankLabel(gameState.requiredRank, 1)}
+                  </span>
                 </span>
-              </span>
+              ) : (
+                <span>
+                  Play {selectedCount} cards as{' '}
+                  <span className="font-extrabold">
+                    {rankLabel(gameState.requiredRank, selectedCount)}
+                  </span>
+                </span>
+              )
             ) : (
               <span>
                 {isMyTurn
-                  ? `Select 1–4 cards to play as ${gameState.requiredRank}s`
+                  ? `Select 1–4 cards to play as ${rankLabel(gameState.requiredRank, 2)}`
                   : `Waiting for ${currentTurnPlayer?.name ?? 'turn'}...`}
               </span>
             )}

@@ -305,3 +305,26 @@ export function getNextRank(currentRank: Rank): Rank {
   if (currentIndex === -1) return 'A';
   return RANKS[(currentIndex + 1) % RANKS.length];
 }
+
+const RANK_LABELS: Record<Rank, { singular: string; plural: string }> = {
+  A: { singular: 'Ace', plural: 'Aces' },
+  '2': { singular: '2', plural: '2s' },
+  '3': { singular: '3', plural: '3s' },
+  '4': { singular: '4', plural: '4s' },
+  '5': { singular: '5', plural: '5s' },
+  '6': { singular: '6', plural: '6s' },
+  '7': { singular: '7', plural: '7s' },
+  '8': { singular: '8', plural: '8s' },
+  '9': { singular: '9', plural: '9s' },
+  '10': { singular: '10', plural: '10s' },
+  J: { singular: 'Jack', plural: 'Jacks' },
+  Q: { singular: 'Queen', plural: 'Queens' },
+  K: { singular: 'King', plural: 'Kings' },
+};
+
+export function rankLabel(rank: Rank, count: number = 2): string {
+  const label = RANK_LABELS[rank];
+  if (!label) return rank;
+  return count === 1 ? label.singular : label.plural;
+}
+

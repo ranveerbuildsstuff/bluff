@@ -119,5 +119,19 @@
 - **Event names**:
   - Client -> Server: `play_turn`
   - Server -> Client: `game_state`, `error`
-- **Deviations**: None.
+### Fix (UI wording): Rank labels
+- **What was fixed/built**:
+  - Added shared helper `rankLabel(rank, count)` in `@bluff/shared`:
+    - Names: A -> Ace/Aces, J -> Jack/Jacks, Q -> Queen/Queens, K -> King/Kings, numbers -> 2/2s ... 10/10s.
+    - Singular when count is 1, plural otherwise (default count is 2 / plural).
+  - Updated UI rank references in `GameScreen.tsx`:
+    - Required rank banner: `"Claim must be: Aces"` (with big card letter preserved as before).
+    - Play bar: `"Play 2 cards as Aces"` / `"Play 1 card as an Ace"` (using "an" before Ace and "a" before other ranks).
+    - Pile caption: `"<Player> played 1 x Ace"` / `"<Player> played 2 x 7s"`.
+  - Added unit test suite in `packages/shared/src/__tests__/rank-label.test.ts` covering singular and plural for A, J, Q, K, 2, 10.
+  - **Rule for later slices**: Later slices must use `rankLabel` for any rank text shown to players.
+- **Key file paths**:
+  - [packages/shared/src/index.ts](file:///e:/ranveer/BLUFF/packages/shared/src/index.ts)
+  - [packages/shared/src/__tests__/rank-label.test.ts](file:///e:/ranveer/BLUFF/packages/shared/src/__tests__/rank-label.test.ts)
+  - [apps/web/src/components/GameScreen.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/GameScreen.tsx)
 
