@@ -1,0 +1,19 @@
+{
+  "name": "bluff-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "build": "npm run --workspaces --if-present build",
+    "test": "vitest run",
+    "typecheck": "npm run --workspaces --if-present typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}
