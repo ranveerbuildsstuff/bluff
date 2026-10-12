@@ -12,6 +12,12 @@ import { RoomManager } from '../room-manager.js';
 import { toRoomView } from '../engine/room.js';
 
 export function setupSocketServer(io: SocketIOServer, roomManager: RoomManager): void {
+  roomManager.setOnRoomChange((room) => {
+    if (room) {
+      io.to(room.roomCode).emit(SERVER_EVENTS.ROOM_VIEW, toRoomView(room));
+    }
+  });
+
   io.on('connection', (socket: Socket) => {
     const sessionToken = socket.handshake.auth?.sessionToken;
     if (typeof sessionToken === 'string' && sessionToken.length > 0) {
@@ -76,7 +82,11 @@ export function setupSocketServer(io: SocketIOServer, roomManager: RoomManager):
     socket.on(
       CLIENT_EVENTS.GET_ROOM_VIEW,
       handle(socket, GetRoomViewRequestSchema, () => {
-        const found = roomManager.findBySocketId(socket.id);
+        const found =
+          roomManager.findBySocketId(socket.id) ||
+          (typeof socket.handshake.auth?.sessionToken === 'string'
+            ? roomManager.findBySessionToken(socket.handshake.auth.sessionToken)
+            : null);
         if (found) {
           socket.emit(SERVER_EVENTS.ROOM_VIEW, toRoomView(found.room));
         } else {
@@ -91,7 +101,11 @@ export function setupSocketServer(io: SocketIOServer, roomManager: RoomManager):
     socket.on(
       CLIENT_EVENTS.LEAVE_ROOM,
       handle(socket, LeaveRoomRequestSchema, () => {
-        const found = roomManager.findBySocketId(socket.id);
+        const found =
+          roomManager.findBySocketId(socket.id) ||
+          (typeof socket.handshake.auth?.sessionToken === 'string'
+            ? roomManager.findBySessionToken(socket.handshake.auth.sessionToken)
+            : null);
         if (!found) {
           return;
         }

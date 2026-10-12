@@ -35,3 +35,16 @@
   - Client -> Server: `create_room`, `join_room`, `get_room_view`, `leave_room`
   - Server -> Client: `session_issued`, `room_view`, `error`
 - **Deviations**: None.
+
+### Fix (Slice 1): Leave room and lobby disconnect cleanup
+- **What was fixed/built**:
+  - `leave_room` removes the player immediately in LOBBY, frees the slot, updates player count, transfers host if host left, and broadcasts updated room view. Leaver's client clears session and returns to landing.
+  - Injectable `Scheduler` introduced to `RoomManager` for deterministic timer testing.
+  - In LOBBY, disconnected players remain "Offline" and are automatically removed after 60 seconds if they do not rejoin with their sessionToken.
+  - Rejoining with sessionToken before 60 seconds cancels the disconnect timer and keeps the player in the room.
+  - If the last player leaves or is removed after disconnect timeout, the room is deleted.
+  - *Deviation/Note*: Pulled lobby-disconnect cleanup forward from Slice 5 into Slice 1 per ticket.
+- **Key file paths**:
+  - [apps/server/src/room-manager.ts](file:///e:/ranveer/BLUFF/apps/server/src/room-manager.ts)
+  - [apps/server/src/socket/index.ts](file:///e:/ranveer/BLUFF/apps/server/src/socket/index.ts)
+  - [apps/server/src/__tests__/leave-and-disconnect.test.ts](file:///e:/ranveer/BLUFF/apps/server/src/__tests__/leave-and-disconnect.test.ts)
