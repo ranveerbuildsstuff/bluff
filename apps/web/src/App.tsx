@@ -217,7 +217,7 @@ export function App() {
   const isCurrentlyConnected = isSocketConnected || Boolean(socket.connected);
 
   return (
-    <main className="min-h-screen bg-slate-900 flex flex-col items-center justify-center relative overflow-hidden">
+    <main className="min-h-screen bg-slate-900 flex flex-col items-center relative overflow-x-hidden w-full">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       {roomView && session ? (

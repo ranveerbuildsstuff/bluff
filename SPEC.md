@@ -31,5 +31,6 @@ User accounts, persistent leaderboards, custom avatars, chat, bots, matchmaking 
 3. Play loop: play 1–4 cards, rotating rank, turn order
 4. Challenge engine, final call, win, play again
 5. Reconnection (PAUSED state), hardening, integration tests, production build
+6. UI polish
 
 Note: `GameState.status` includes LOBBY | PLAYING | FINAL_CALL | PAUSED | GAME_OVER from Slice 2 on, so later slices extend instead of rewrite.

@@ -6,6 +6,7 @@
 - [x] Slice 3: Play loop
 - [x] Slice 4: Challenge engine, final call & win
 - [x] Slice 5: Reconnection, hardening & proof
+- [x] Slice 6: UI polish
 
 ## Decisions & deviations
 ### Slice 1: Scaffold, identity & lobby
@@ -211,6 +212,43 @@
   - Client -> Server: `create_room`, `join_room`, `update_settings`, `start_game`, `play_turn`, `call_bluff`, `play_again`, `leave_room`, `get_room_view`
   - Server -> Client: `player_disconnected`, `player_reconnected`, `session_issued`, `room_view`, `game_state`, `challenge_result`, `error`
 - **Deviations**: None.
+
+### Slice 6: UI polish
+- **What was built/polished**:
+  - **Hand layout**: Replaced horizontal scrollbar with wrapping flex rows (`flex-wrap gap-1.5 sm:gap-2 gap-y-3 justify-center`). Up to 15 cards wrap cleanly at 360px width with no sideways scrolling. Every card maintains >= 44px touch targets (54x72px cards). Selected cards lift (`-translate-y-2.5 relative z-10`) without clipping. Removed white scrollbar strip.
+  - **Grammar**:
+    - Added `rankWithArticle(rank)` in `@bluff/shared`: "an Ace", "an 8", "a 2" to "a 7", "a 9", "a 10", "a Jack", "a Queen", "a King".
+    - Added `cardCountLabel(count)` ("1 card" / "N cards") and `cardsWord(count)` ("Card" / "Cards") in `@bluff/shared`.
+    - Integrated in play bar: `"Play 1 card as an 8"`, `"Play 1 card as an Ace"`, `"Play 2 cards as 8s"`.
+    - Fixed `(1 cards)` everywhere: Call Bluff button (`Call Bluff on Bob (1 card)`), pickup overlay announcement (`picks up the whole pile (1 card)!`), hand badge (`1 card` vs `15 cards`), and central pile (`Card` vs `Cards`).
+  - **Game over screen**:
+    - Viewer won: `"You won!"` with `"You emptied your hand and survived the final call!"`.
+    - Opponent won: `"{name} wins!"` with `"{name} emptied their hand and survived the final call!"`.
+  - **Call Bluff button**:
+    - Guaranteed enabled whenever challenge is allowed (`PLAYING` or `FINAL_CALL`, pile not empty, last play not mine), including on player's own turn and regardless of card selection.
+    - Explicit disabled state labels: `"Call Bluff (Pile Empty)"`, `"Call Bluff (Your Play)"`, `"Call Bluff (Paused)"`, `"Call Bluff (Game Over)"`.
+    - Added safety timeout resetting `isCallingBluff` to prevent stuck calling state.
+  - **Phone layout**:
+    - Added `viewport-fit=cover` to `<meta name="viewport">` in `index.html`.
+    - Added `padding-bottom: max(8px, env(safe-area-inset-bottom, 8px))` to the fixed bottom action bar for safe-area insets.
+    - Stacked buttons (Call Bluff, Play) made compact (~48px each: `h-12 min-h-[48px]`).
+    - Added `calc(140px + env(safe-area-inset-bottom, 0px))` bottom padding to the page container so the hand's last card row and the central pile are never hidden under the fixed bar.
+    - Enabled vertical scrolling on phone in `App.tsx` by replacing `overflow-hidden` with `overflow-x-hidden`.
+  - **Tests**:
+    - Added unit tests in `packages/shared/src/__tests__/rank-label.test.ts` for all 13 ranks with `rankWithArticle`, plus singular/plural `cardCountLabel` and `cardsWord`.
+    - Added comprehensive component tests in `apps/web/src/__tests__/slice6-ui-polish.test.tsx` verifying hand wrapping, touch targets, grammar, Call Bluff states, game over copy, and phone layout styling.
+- **Key file paths**:
+  - [packages/shared/src/index.ts](file:///e:/ranveer/BLUFF/packages/shared/src/index.ts)
+  - [packages/shared/src/__tests__/rank-label.test.ts](file:///e:/ranveer/BLUFF/packages/shared/src/__tests__/rank-label.test.ts)
+  - [apps/web/index.html](file:///e:/ranveer/BLUFF/apps/web/index.html)
+  - [apps/web/src/App.tsx](file:///e:/ranveer/BLUFF/apps/web/src/App.tsx)
+  - [apps/web/src/components/GameScreen.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/GameScreen.tsx)
+  - [apps/web/src/__tests__/slice6-ui-polish.test.tsx](file:///e:/ranveer/BLUFF/apps/web/src/__tests__/slice6-ui-polish.test.tsx)
+  - [SPEC.md](file:///e:/ranveer/BLUFF/SPEC.md)
+  - [PROGRESS.md](file:///e:/ranveer/BLUFF/PROGRESS.md)
+- **Event names**: No server event changes.
+- **Deviations**: None.
+
 
 
 

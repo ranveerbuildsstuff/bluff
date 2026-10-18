@@ -5,6 +5,9 @@ import {
   Card,
   Suit,
   rankLabel,
+  rankWithArticle,
+  cardCountLabel,
+  cardsWord,
   ChallengeResult,
 } from '@bluff/shared';
 
@@ -57,7 +60,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   useEffect(() => {
     setSelectedCardIds([]);
     setIsCallingBluff(false);
-  }, [gameState.playSeq, gameState.status, gameState.pile.count]);
+  }, [gameState.playSeq, gameState.status, gameState.pile.count, challengeResult]);
+
+  // Safety timeout so isCallingBluff never remains stuck if server rejects or times out
+  useEffect(() => {
+    if (!isCallingBluff) return;
+    const timer = setTimeout(() => setIsCallingBluff(false), 5000);
+    return () => clearTimeout(timer);
+  }, [isCallingBluff]);
 
   // Purge any selected cards that are no longer in myHand
   useEffect(() => {
@@ -147,6 +157,22 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   const canCallBluff = isCallBluffEligible && !isCallingBluff;
 
+  const callBluffLabel = useMemo(() => {
+    if (isCallingBluff) return 'Calling Bluff...';
+    if (!hasLastPlay) return 'Call Bluff (Pile Empty)';
+    if (isLastPlayMine) return 'Call Bluff (Your Play)';
+    if (gameState.status === 'PAUSED') return 'Call Bluff (Paused)';
+    if (gameState.status === 'GAME_OVER') return 'Call Bluff (Game Over)';
+    return `Call Bluff on ${lastPlayPlayerName} (${lastPlay ? cardCountLabel(lastPlay.count) : ''})`;
+  }, [
+    isCallingBluff,
+    hasLastPlay,
+    isLastPlayMine,
+    gameState.status,
+    lastPlayPlayerName,
+    lastPlay,
+  ]);
+
   const toggleCardSelection = (cardId: string) => {
     setSelectedCardIds((prev) => {
       if (prev.includes(cardId)) {
@@ -178,7 +204,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const winnerPlayer = gameState.players.find((p) => p.playerId === gameState.winnerId);
 
   return (
-    <div className="w-full max-w-[360px] mx-auto px-3 py-4 flex flex-col justify-between min-h-[640px] text-white relative">
+    <div
+      className="w-full max-w-[360px] mx-auto px-3 pt-3 text-white relative flex flex-col justify-between"
+      style={{
+        paddingBottom: 'calc(140px + env(safe-area-inset-bottom, 0px))',
+      }}
+    >
       {/* Top Header & Connection */}
       <div>
         <div className="flex items-center justify-between mb-3">
@@ -281,7 +312,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                     {gameState.pile.count}
                   </span>
                   <span className="text-[9px] font-bold uppercase text-indigo-300">
-                    Cards
+                    {cardsWord(gameState.pile.count)}
                   </span>
                 </div>
               </div>
@@ -361,10 +392,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         </div>
       </div>
 
-      {/* Your Hand & Sticky Action Bar */}
+      {/* Your Hand */}
       <div className="flex flex-col mt-auto">
         {/* Hand container */}
-        <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-3 shadow-xl">
+        <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-2.5 shadow-xl mt-3">
           <div className="flex items-center justify-between mb-2 px-1">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
@@ -377,15 +408,15 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               )}
             </div>
             <span className="text-xs font-bold font-mono text-indigo-300 px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20">
-              {sortedHand.length} cards
+              {cardCountLabel(sortedHand.length)}
             </span>
           </div>
 
-          {/* Cards Hand */}
+          {/* Cards Hand: Wrapping rows, no sideways scroll, lifted cards not clipped */}
           <div
             tabIndex={0}
             aria-label="Your hand of cards"
-            className="flex gap-2 overflow-x-auto pb-3 pt-4 px-1 max-h-[160px] flex-nowrap scrollbar-thin items-end"
+            className="flex flex-wrap gap-1.5 sm:gap-2 gap-y-3 justify-center pt-3.5 pb-1 px-0.5"
             style={{ touchAction: 'manipulation' }}
           >
             {sortedHand.length === 0 ? (
@@ -407,9 +438,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                     aria-label={`${card.rank} of ${card.suit}${
                       isSelected ? ', selected' : ''
                     }`}
-                    className={`shrink-0 w-12 h-18 sm:w-14 sm:h-20 bg-white rounded-lg border-2 shadow-md p-1 flex flex-col justify-between items-center select-none min-h-[44px] min-w-[44px] transition-all transform cursor-pointer ${
+                    className={`w-[54px] h-[72px] sm:w-[58px] sm:h-[76px] bg-white rounded-lg border-2 shadow-md p-1 flex flex-col justify-between items-center select-none min-h-[44px] min-w-[44px] transition-all transform cursor-pointer ${
                       isSelected
-                        ? '-translate-y-3.5 border-amber-400 ring-2 ring-amber-400 shadow-amber-500/30 shadow-lg bg-amber-50'
+                        ? 'relative z-10 -translate-y-2.5 border-amber-400 ring-2 ring-amber-400 shadow-amber-500/40 shadow-lg bg-amber-50'
                         : 'border-slate-300 hover:border-slate-400 active:scale-95'
                     }`}
                     style={{ touchAction: 'manipulation' }}
@@ -443,44 +474,38 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             )}
           </div>
         </div>
+      </div>
 
-        {/* Sticky Bottom Action Area */}
-        <div className="sticky bottom-0 left-0 right-0 pt-2 pb-1 bg-slate-900/95 backdrop-blur-sm border-t border-slate-800 -mx-3 px-3 mt-2 flex flex-col gap-2">
-          {/* Call Bluff Button */}
+      {/* Fixed Bottom Action Area */}
+      <div
+        className="fixed bottom-0 left-0 right-0 z-30 bg-slate-900/95 backdrop-blur-md border-t border-slate-800"
+        style={{
+          paddingBottom: 'max(8px, env(safe-area-inset-bottom, 8px))',
+        }}
+      >
+        <div className="w-full max-w-[360px] mx-auto px-3 pt-2 flex flex-col gap-2">
+          {/* Call Bluff Button: ~48px compact */}
           <button
             type="button"
             disabled={!canCallBluff}
             onClick={handleCallBluffClick}
-            className={`w-full py-3 px-4 rounded-xl font-black text-sm tracking-wide transition-all min-h-[48px] flex items-center justify-center shadow-lg ${
+            className={`w-full h-12 min-h-[48px] px-3 rounded-xl font-bold text-sm tracking-wide transition-all flex items-center justify-center shadow-lg ${
               canCallBluff
                 ? 'bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white shadow-rose-600/30 ring-2 ring-rose-400 cursor-pointer animate-pulse'
                 : 'bg-slate-800/80 border border-slate-700/60 text-slate-500 cursor-not-allowed opacity-60'
             }`}
             style={{ touchAction: 'manipulation' }}
           >
-            {isCallingBluff ? (
-              <span>Calling Bluff...</span>
-            ) : hasLastPlay ? (
-              isLastPlayMine ? (
-                <span>Call Bluff (Your Play)</span>
-              ) : (
-                <span>
-                  Call Bluff on {lastPlayPlayerName}
-                  {lastPlay ? ` (${lastPlay.count} cards)` : ''}
-                </span>
-              )
-            ) : (
-              <span>Call Bluff (Pile Empty)</span>
-            )}
+            {callBluffLabel}
           </button>
 
-          {/* Play Cards Action (only in PLAYING state) */}
+          {/* Play Cards Action (only in PLAYING state): ~48px compact */}
           {gameState.status === 'PLAYING' && (
             <button
               type="button"
               disabled={!canPlay}
               onClick={handlePlayClick}
-              className={`w-full py-2.5 px-4 rounded-xl font-bold text-sm tracking-wide transition-all min-h-[48px] flex items-center justify-center shadow-md ${
+              className={`w-full h-12 min-h-[48px] px-3 rounded-xl font-bold text-sm tracking-wide transition-all flex items-center justify-center shadow-md ${
                 canPlay
                   ? 'bg-amber-400 hover:bg-amber-300 active:scale-[0.98] text-slate-950 shadow-amber-500/25 ring-2 ring-amber-300 cursor-pointer'
                   : 'bg-slate-800/80 border border-slate-700/60 text-slate-400 cursor-not-allowed opacity-80'
@@ -492,8 +517,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                   <span>
                     Play 1 card as{' '}
                     <span className="font-extrabold">
-                      {gameState.requiredRank === 'A' ? 'an' : 'a'}{' '}
-                      {rankLabel(gameState.requiredRank, 1)}
+                      {rankWithArticle(gameState.requiredRank)}
                     </span>
                   </span>
                 ) : (
@@ -643,8 +667,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                   (p) => p.playerId === challengeResult.pickedUpById
                 )?.name ?? 'Loser'}
               </span>{' '}
-              picks up the whole pile ({challengeResult.pickedUpCount}{' '}
-              {challengeResult.pickedUpCount === 1 ? 'card' : 'cards'})!
+              picks up the whole pile ({cardCountLabel(challengeResult.pickedUpCount)})!
             </div>
 
             <span className="text-[10px] text-slate-400 tracking-wider uppercase mt-1 animate-pulse">
@@ -717,15 +740,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                 </div>
                 <div>
                   <h2 className="text-2xl font-black text-amber-300 tracking-wider">
-                    GAME OVER
-                  </h2>
-                  <p className="text-base text-slate-100 font-bold mt-1">
                     {winnerPlayer?.playerId === currentPlayerId
-                      ? '🎉 YOU WON THE GAME! 🎉'
-                      : `👑 ${winnerPlayer?.name ?? 'A player'} Wins!`}
-                  </p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Emptied their hand and survived the final call!
+                      ? 'You won!'
+                      : `${winnerPlayer?.name ?? 'Opponent'} wins!`}
+                  </h2>
+                  <p className="text-sm text-slate-100 font-medium mt-1">
+                    {winnerPlayer?.playerId === currentPlayerId
+                      ? 'You emptied your hand and survived the final call!'
+                      : `${winnerPlayer?.name ?? 'Opponent'} emptied their hand and survived the final call!`}
                   </p>
                 </div>
 

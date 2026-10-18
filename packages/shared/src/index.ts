@@ -390,3 +390,29 @@ export function rankLabel(rank: Rank, count: number = 2): string {
   return count === 1 ? label.singular : label.plural;
 }
 
+export function rankWithArticle(rank: Rank): string {
+  switch (rank) {
+    case 'A':
+      return 'an Ace';
+    case '8':
+      return 'an 8';
+    case 'J':
+      return 'a Jack';
+    case 'Q':
+      return 'a Queen';
+    case 'K':
+      return 'a King';
+    default:
+      return `a ${rank}`;
+  }
+}
+
+export function cardCountLabel(count: number): string {
+  return count === 1 ? '1 card' : `${count} cards`;
+}
+
+export function cardsWord(count: number): string {
+  return count === 1 ? 'Card' : 'Cards';
+}
+
+
