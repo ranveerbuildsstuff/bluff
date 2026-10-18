@@ -5,7 +5,7 @@
 - [x] Slice 2: Game setup, host settings & hidden information
 - [x] Slice 3: Play loop
 - [x] Slice 4: Challenge engine, final call & win
-- [ ] Slice 5: Reconnection, hardening & proof
+- [x] Slice 5: Reconnection, hardening & proof
 
 ## Decisions & deviations
 ### Slice 1: Scaffold, identity & lobby
@@ -166,5 +166,51 @@
   - Client -> Server: `call_bluff`, `play_again`
   - Server -> Client: `challenge_result`, `game_state`, `room_view`, `error`
 - **Deviations**: None.
+
+### Slice 5: Reconnection, hardening & proof
+- **What was built**:
+  - Pure engine game functions: `pauseGame(state, now, graceMs)`, `resumeGame(state, now)`, and `abandonGame(state, abandonedPlayerName)`.
+  - Pause on disconnect: when a socket disconnects during `PLAYING` or `FINAL_CALL`, marks player disconnected, pauses room, stores `pausedFrom`, calculates and saves `finalCallRemainingMs`, cancels final call timer, and schedules a 60-second grace timer per disconnected player.
+  - While `PAUSED`, `play_turn` and `call_bluff` are strictly rejected with error code `GAME_PAUSED`.
+  - Reconnection via `sessionToken`: restoring connection updates socket association, emits private `game_state`, stays `PAUSED` if other players remain disconnected, and resumes status to `pausedFrom` once all players are back. If resuming `FINAL_CALL`, remaining time is preserved (scheduled as `now + finalCallRemainingMs`, not reset to 10s).
+  - Abandonment: if a grace timer reaches 60s without return, room transitions to `GAME_OVER` with `endedReason: 'PLAYER_ABANDONED'` and winner cleared (`winnerId: undefined`), broadcasts to all, and schedules room deletion after 2 minutes.
+  - Abuse protection: per-socket token bucket (~10 events/sec, capacity 10, refill 10/s) dropping excess with error code `RATE_LIMITED`. Payload limit enforced at 10 KB via `maxHttpBufferSize`.
+  - Security audit:
+    - Vitest scanner test failing if any `socket.on` is registered outside the `handle()` wrapper (except the built-in `disconnect`).
+    - Automated assertion that every inbound schema is `.strict()`.
+    - Zero leaks: `sessionToken` and other players' cards never appear in outbound payloads or logs (card faces appear strictly inside `challenge_result.revealedCards`).
+    - Error messages contain no sensitive state.
+    - Zero `console.log` of game state.
+  - Client enhancements:
+    - Immediate reconnection on page refresh/reopen and `visibilitychange` with stored `sessionToken`.
+    - `PAUSED` countdown overlay: "Waiting for {name} to reconnect ({X}s)" synchronized using `serverNow` clock offset.
+    - `PLAYER_ABANDONED` screen: "Game ended: {name} didn't come back" with a Leave button returning to landing screen.
+    - Uses `rankLabel` for all rank references.
+  - End-to-end integration test (`slice5-integration.test.ts`): 3 real `socket.io-client` connections covering settings update, start, truthful challenge, bluff-caught challenge, mid-game pause and resume, final-call preserved time resume, abandonment on grace expiry, `play_again` return to lobby, and full frame assertion confirming zero card leaks to opponent views.
+  - Production & Deployment:
+    - Single-process static serving: Express serves `apps/web/dist` SPA when built, listening on `0.0.0.0` and `process.env.PORT`.
+    - `README.md` documentation covering local Wi-Fi mobile gameplay instructions and free-tier single-process deployment guide.
+  - Testing & V8 Coverage:
+    - Installed and configured `@vitest/coverage-v8`.
+    - `npm run test:coverage` achieves **98.01%** Statements, **93.67%** Branches, **100%** Functions, and **98.01%** Lines on `apps/server/src/engine/` (exceeding the >= 90% target).
+- **Key file paths**:
+  - [packages/shared/src/index.ts](file:///e:/ranveer/BLUFF/packages/shared/src/index.ts)
+  - [apps/server/src/engine/game.ts](file:///e:/ranveer/BLUFF/apps/server/src/engine/game.ts)
+  - [apps/server/src/room-manager.ts](file:///e:/ranveer/BLUFF/apps/server/src/room-manager.ts)
+  - [apps/server/src/socket/handle.ts](file:///e:/ranveer/BLUFF/apps/server/src/socket/handle.ts)
+  - [apps/server/src/socket/index.ts](file:///e:/ranveer/BLUFF/apps/server/src/socket/index.ts)
+  - [apps/server/src/index.ts](file:///e:/ranveer/BLUFF/apps/server/src/index.ts)
+  - [apps/web/src/components/GameScreen.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/GameScreen.tsx)
+  - [apps/web/src/App.tsx](file:///e:/ranveer/BLUFF/apps/web/src/App.tsx)
+  - [apps/server/src/__tests__/slice5-reconnection-pause.test.ts](file:///e:/ranveer/BLUFF/apps/server/src/__tests__/slice5-reconnection-pause.test.ts)
+  - [apps/server/src/__tests__/security-audit.test.ts](file:///e:/ranveer/BLUFF/apps/server/src/__tests__/security-audit.test.ts)
+  - [apps/server/src/__tests__/slice5-integration.test.ts](file:///e:/ranveer/BLUFF/apps/server/src/__tests__/slice5-integration.test.ts)
+  - [README.md](file:///e:/ranveer/BLUFF/README.md)
+  - [vitest.config.ts](file:///e:/ranveer/BLUFF/vitest.config.ts)
+- **Event names**:
+  - Client -> Server: `create_room`, `join_room`, `update_settings`, `start_game`, `play_turn`, `call_bluff`, `play_again`, `leave_room`, `get_room_view`
+  - Server -> Client: `player_disconnected`, `player_reconnected`, `session_issued`, `room_view`, `game_state`, `challenge_result`, `error`
+- **Deviations**: None.
+
 
 

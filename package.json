@@ -9,10 +9,13 @@
   "scripts": {
     "dev": "node scripts/dev.js",
     "build": "npm run --workspaces --if-present build",
+    "start": "npm start --workspace=@bluff/server",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "npm run --workspaces --if-present typecheck"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^2.1.9",
     "typescript": "^5.7.3",
     "vitest": "^2.1.8"
   }

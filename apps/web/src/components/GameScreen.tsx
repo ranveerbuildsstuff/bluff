@@ -51,6 +51,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [isCallingBluff, setIsCallingBluff] = useState(false);
   const [flipped, setFlipped] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+  const [pausedSeconds, setPausedSeconds] = useState<number | null>(null);
 
   // Clear selection after a successful play or status change
   useEffect(() => {
@@ -99,6 +100,27 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     const interval = setInterval(updateTimer, 100);
     return () => clearInterval(interval);
   }, [gameState.status, gameState.finalCallDeadline, gameState.serverNow]);
+
+  // PAUSED countdown using serverNow offset
+  useEffect(() => {
+    if (gameState.status !== 'PAUSED' || !gameState.rejoinDeadline) {
+      setPausedSeconds(null);
+      return;
+    }
+
+    const serverOffset = gameState.serverNow - Date.now();
+
+    const updateTimer = () => {
+      const currentServerTime = Date.now() + serverOffset;
+      const remainingMs = (gameState.rejoinDeadline as number) - currentServerTime;
+      const sec = Math.max(0, Math.ceil(remainingMs / 1000));
+      setPausedSeconds(sec);
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 100);
+    return () => clearInterval(interval);
+  }, [gameState.status, gameState.rejoinDeadline, gameState.serverNow]);
 
   const sortedHand = useMemo(() => sortCards(gameState.myHand), [gameState.myHand]);
 
@@ -632,52 +654,108 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         </div>
       )}
 
+      {/* Paused Overlay */}
+      {gameState.status === 'PAUSED' && (
+        <div
+          role="dialog"
+          aria-label="Game Paused"
+          className="fixed inset-0 z-40 bg-slate-950/85 backdrop-blur-md flex flex-col items-center justify-center p-4 select-none"
+        >
+          <div className="w-full max-w-[340px] bg-slate-900 border-2 border-amber-500/70 rounded-3xl p-6 text-center shadow-2xl flex flex-col items-center gap-3">
+            <div className="w-14 h-14 rounded-full bg-amber-500/20 border-2 border-amber-400 flex items-center justify-center text-2xl animate-pulse">
+              ⏸️
+            </div>
+            <h3 className="text-lg font-black text-amber-300 tracking-wide">
+              GAME PAUSED
+            </h3>
+            <p className="text-sm text-slate-100 font-bold">
+              Waiting for {gameState.players.find((p) => !p.connected)?.name ?? 'Player'} to reconnect ({pausedSeconds !== null ? pausedSeconds : 60}s)
+            </p>
+            <p className="text-xs text-slate-400">
+              The game will automatically resume once all players are back.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Game Over Screen */}
       {gameState.status === 'GAME_OVER' && (
         <div className="fixed inset-0 z-40 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-4">
           <div className="w-full max-w-[340px] bg-slate-900 border-2 border-amber-500/60 rounded-3xl p-6 text-center shadow-2xl flex flex-col items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-amber-500/20 border-2 border-amber-400 flex items-center justify-center text-3xl shadow-lg">
-              🏆
-            </div>
-            <div>
-              <h2 className="text-2xl font-black text-amber-300 tracking-wider">
-                GAME OVER
-              </h2>
-              <p className="text-base text-slate-100 font-bold mt-1">
-                {winnerPlayer?.playerId === currentPlayerId
-                  ? '🎉 YOU WON THE GAME! 🎉'
-                  : `👑 ${winnerPlayer?.name ?? 'A player'} Wins!`}
-              </p>
-              <p className="text-xs text-slate-400 mt-1">
-                Emptied their hand and survived the final call!
-              </p>
-            </div>
-
-            <div className="w-full flex flex-col gap-2.5 mt-2">
-              {isHost ? (
-                <button
-                  type="button"
-                  onClick={onPlayAgain}
-                  className="w-full py-3.5 px-4 rounded-xl font-black text-sm tracking-wide bg-emerald-500 hover:bg-emerald-400 active:scale-[0.98] text-slate-950 shadow-lg shadow-emerald-500/25 ring-2 ring-emerald-300 min-h-[48px] flex items-center justify-center cursor-pointer transition-all"
-                  style={{ touchAction: 'manipulation' }}
-                >
-                  Play Again
-                </button>
-              ) : (
-                <div className="py-3 px-4 rounded-xl text-xs font-semibold text-slate-400 bg-slate-800/80 border border-slate-700 text-center">
-                  Waiting for host to start a new game...
+            {gameState.endedReason === 'PLAYER_ABANDONED' ? (
+              <>
+                <div className="w-16 h-16 rounded-full bg-rose-500/20 border-2 border-rose-400 flex items-center justify-center text-3xl shadow-lg">
+                  🚪
                 </div>
-              )}
+                <div>
+                  <h2 className="text-xl font-black text-rose-300 tracking-wider">
+                    GAME OVER
+                  </h2>
+                  <p className="text-base text-slate-100 font-bold mt-2">
+                    Game ended: {gameState.abandonedPlayerName || gameState.players.find((p) => !p.connected)?.name || 'Player'} didn't come back
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    The reconnection grace period expired.
+                  </p>
+                </div>
 
-              <button
-                type="button"
-                onClick={onLeaveRoom}
-                className="w-full py-3 px-4 rounded-xl font-bold text-xs text-rose-400 hover:text-rose-300 active:scale-[0.98] bg-rose-500/10 border border-rose-500/30 min-h-[44px] flex items-center justify-center transition-all"
-                style={{ touchAction: 'manipulation' }}
-              >
-                Leave Room
-              </button>
-            </div>
+                <div className="w-full flex flex-col gap-2.5 mt-2">
+                  <button
+                    type="button"
+                    onClick={onLeaveRoom}
+                    className="w-full py-3.5 px-4 rounded-xl font-black text-sm tracking-wide bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white shadow-lg shadow-rose-600/25 ring-2 ring-rose-400 min-h-[48px] flex items-center justify-center transition-all cursor-pointer"
+                    style={{ touchAction: 'manipulation' }}
+                  >
+                    Leave
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="w-16 h-16 rounded-full bg-amber-500/20 border-2 border-amber-400 flex items-center justify-center text-3xl shadow-lg">
+                  🏆
+                </div>
+                <div>
+                  <h2 className="text-2xl font-black text-amber-300 tracking-wider">
+                    GAME OVER
+                  </h2>
+                  <p className="text-base text-slate-100 font-bold mt-1">
+                    {winnerPlayer?.playerId === currentPlayerId
+                      ? '🎉 YOU WON THE GAME! 🎉'
+                      : `👑 ${winnerPlayer?.name ?? 'A player'} Wins!`}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Emptied their hand and survived the final call!
+                  </p>
+                </div>
+
+                <div className="w-full flex flex-col gap-2.5 mt-2">
+                  {isHost ? (
+                    <button
+                      type="button"
+                      onClick={onPlayAgain}
+                      className="w-full py-3.5 px-4 rounded-xl font-black text-sm tracking-wide bg-emerald-500 hover:bg-emerald-400 active:scale-[0.98] text-slate-950 shadow-lg shadow-emerald-500/25 ring-2 ring-emerald-300 min-h-[48px] flex items-center justify-center cursor-pointer transition-all"
+                      style={{ touchAction: 'manipulation' }}
+                    >
+                      Play Again
+                    </button>
+                  ) : (
+                    <div className="py-3 px-4 rounded-xl text-xs font-semibold text-slate-400 bg-slate-800/80 border border-slate-700 text-center">
+                      Waiting for host to start a new game...
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={onLeaveRoom}
+                    className="w-full py-3 px-4 rounded-xl font-bold text-xs text-rose-400 hover:text-rose-300 active:scale-[0.98] bg-rose-500/10 border border-rose-500/30 min-h-[44px] flex items-center justify-center transition-all"
+                    style={{ touchAction: 'manipulation' }}
+                  >
+                    Leave Room
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -53,4 +53,10 @@ describe('Room Code Generator', () => {
     expect(code).not.toBe('ABCDEF');
     expect(code).toBe('BCDEFG');
   });
+
+  it('throws error if unique code cannot be generated within maxAttempts', () => {
+    expect(() => generateUniqueRoomCode(() => true, undefined, 5)).toThrow(
+      'Failed to generate a unique room code after maximum attempts'
+    );
+  });
 });

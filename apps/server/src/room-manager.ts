@@ -14,11 +14,20 @@ import {
   startGame as engineStartGame,
   playTurn as enginePlayTurn,
   callBluff as engineCallBluff,
+  pauseGame,
+  resumeGame,
+  abandonGame,
   PlayTurnResult,
   CallBluffResult,
 } from './engine/game.js';
 import { generateUniqueRoomCode } from './engine/room-code.js';
-import { GameState, maxCardsPerPlayer, FINAL_CALL_MS } from '@bluff/shared';
+import {
+  GameState,
+  maxCardsPerPlayer,
+  FINAL_CALL_MS,
+  REJOIN_GRACE_MS,
+  ABANDONED_CLEANUP_MS,
+} from '@bluff/shared';
 
 export const ROOM_CLEANUP_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 export const LOBBY_DISCONNECT_TIMEOUT_MS = 60 * 1000; // 60 seconds
@@ -34,19 +43,26 @@ export const defaultScheduler: Scheduler = {
 };
 
 export type RoomChangeCallback = (room: RoomState | null, roomCode: string) => void;
+export type ActionQueueFn = <T>(roomCode: string, action: () => Promise<T> | T) => Promise<T>;
 
 export class RoomManager {
   private rooms = new Map<string, RoomState>();
   private cleanupTimers = new Map<string, unknown>();
   private playerDisconnectTimers = new Map<string, unknown>();
+  private playerGraceDeadlines = new Map<string, number>();
   private finalCallTimers = new Map<string, unknown>();
   private onRoomChange?: RoomChangeCallback;
+  private actionQueue?: ActionQueueFn;
 
   constructor(
     private scheduler: Scheduler = defaultScheduler,
     onRoomChange?: RoomChangeCallback
   ) {
     this.onRoomChange = onRoomChange;
+  }
+
+  public setActionQueue(queue: ActionQueueFn): void {
+    this.actionQueue = queue;
   }
 
   public setOnRoomChange(callback: RoomChangeCallback): void {
@@ -306,6 +322,13 @@ export class RoomManager {
     room.status = 'LOBBY';
     room.gameState = null;
 
+    // Apply 60s disconnect timer for any players currently offline when returning to lobby
+    for (const player of room.players) {
+      if (!player.connected) {
+        this.schedulePlayerDisconnectTimer(code, player.playerId);
+      }
+    }
+
     return { ok: true, room };
   }
 
@@ -342,21 +365,44 @@ export class RoomManager {
     room: RoomState;
     player: PlayerRecord;
     allDisconnected: boolean;
+    paused: boolean;
+    rejoinDeadline?: number;
   } | null {
     for (const [code, room] of this.rooms.entries()) {
       const outcome = engineDisconnectPlayer(room, socketId);
       if (outcome.player) {
+        const player = outcome.player;
+        let paused = false;
+        let rejoinDeadline: number | undefined;
+
         if (room.status === 'LOBBY') {
-          this.schedulePlayerDisconnectTimer(code, outcome.player.playerId);
+          this.schedulePlayerDisconnectTimer(code, player.playerId);
+        } else if (room.status === 'PLAYING' || room.status === 'FINAL_CALL') {
+          paused = true;
+          this.cancelFinalCallTimer(code);
+          const now = Date.now();
+          if (room.gameState) {
+            room.gameState = pauseGame(room.gameState, now, REJOIN_GRACE_MS);
+            rejoinDeadline = room.gameState.rejoinDeadline ?? undefined;
+          }
+          room.status = 'PAUSED';
+          this.scheduleGameGraceTimer(code, player.playerId, REJOIN_GRACE_MS);
+        } else if (room.status === 'PAUSED') {
+          const now = Date.now();
+          rejoinDeadline = now + REJOIN_GRACE_MS;
+          this.scheduleGameGraceTimer(code, player.playerId, REJOIN_GRACE_MS);
         }
 
         if (outcome.allDisconnected) {
           this.scheduleCleanupTimer(code);
         }
+
         return {
           room,
-          player: outcome.player,
+          player,
           allDisconnected: outcome.allDisconnected,
+          paused,
+          rejoinDeadline,
         };
       }
     }
@@ -371,6 +417,7 @@ export class RoomManager {
     this.cancelPlayerDisconnectTimer(playerId);
     const timer = this.scheduler.setTimeout(() => {
       this.playerDisconnectTimers.delete(playerId);
+      this.playerGraceDeadlines.delete(playerId);
       const code = roomCode.toUpperCase();
       const room = this.rooms.get(code);
       if (!room) return;
@@ -385,24 +432,112 @@ export class RoomManager {
     this.playerDisconnectTimers.set(playerId, timer);
   }
 
+  public scheduleGameGraceTimer(
+    roomCode: string,
+    playerId: string,
+    timeoutMs: number = REJOIN_GRACE_MS
+  ): void {
+    this.cancelPlayerDisconnectTimer(playerId);
+    const deadline = Date.now() + timeoutMs;
+    this.playerGraceDeadlines.set(playerId, deadline);
+
+    const timer = this.scheduler.setTimeout(() => {
+      const run = () => this.handleGraceTimeout(roomCode, playerId);
+      if (this.actionQueue) {
+        this.actionQueue(roomCode, run);
+      } else {
+        run();
+      }
+    }, timeoutMs);
+    this.playerDisconnectTimers.set(playerId, timer);
+  }
+
+  public handleGraceTimeout(roomCode: string, playerId: string): void {
+    const code = roomCode.toUpperCase();
+    this.playerDisconnectTimers.delete(playerId);
+    this.playerGraceDeadlines.delete(playerId);
+    const room = this.rooms.get(code);
+    if (!room) return;
+
+    const player = room.players.find((p) => p.playerId === playerId);
+    if (player && !player.connected && room.status === 'PAUSED') {
+      const abandonedName = player.name;
+      if (room.gameState) {
+        room.gameState = abandonGame(room.gameState, abandonedName);
+      }
+      room.status = 'GAME_OVER';
+
+      for (const p of room.players) {
+        this.cancelPlayerDisconnectTimer(p.playerId);
+      }
+      this.cancelFinalCallTimer(code);
+
+      // Delete room after 2 minutes on abandonment
+      this.scheduleCleanupTimer(code, ABANDONED_CLEANUP_MS);
+
+      if (this.onRoomChange) {
+        this.onRoomChange(room, code);
+      }
+    }
+  }
+
   public cancelPlayerDisconnectTimer(playerId: string): void {
     const existing = this.playerDisconnectTimers.get(playerId);
     if (existing) {
       this.scheduler.clearTimeout(existing);
       this.playerDisconnectTimers.delete(playerId);
     }
+    this.playerGraceDeadlines.delete(playerId);
   }
 
   public reattachBySessionToken(
     sessionToken: string,
     newSocketId: string
-  ): { room: RoomState; player: PlayerRecord } | null {
+  ): {
+    room: RoomState;
+    player: PlayerRecord;
+    resumed: boolean;
+    wasPaused: boolean;
+  } | null {
     for (const [code, room] of this.rooms.entries()) {
       const player = engineReattachPlayer(room, sessionToken, newSocketId);
       if (player) {
         this.cancelPlayerDisconnectTimer(player.playerId);
         this.cancelCleanupTimer(code);
-        return { room, player };
+
+        let resumed = false;
+        let wasPaused = false;
+
+        if (room.status === 'PAUSED' || room.gameState?.status === 'PAUSED') {
+          wasPaused = true;
+          const remainingDisconnected = room.players.filter((p) => !p.connected);
+          if (remainingDisconnected.length > 0) {
+            let earliestDeadline: number | null = null;
+            for (const dp of remainingDisconnected) {
+              const d = this.playerGraceDeadlines.get(dp.playerId);
+              if (d && (earliestDeadline === null || d < earliestDeadline)) {
+                earliestDeadline = d;
+              }
+            }
+            if (room.gameState && earliestDeadline) {
+              room.gameState.rejoinDeadline = earliestDeadline;
+            }
+            resumed = false;
+          } else {
+            resumed = true;
+            if (room.gameState) {
+              room.gameState = resumeGame(room.gameState, Date.now());
+              room.status = room.gameState.status;
+
+              if (room.status === 'FINAL_CALL' && room.gameState.finalCallDeadline) {
+                const remainingMs = Math.max(0, room.gameState.finalCallDeadline - Date.now());
+                this.scheduleFinalCallTimer(code, remainingMs);
+              }
+            }
+          }
+        }
+
+        return { room, player, resumed, wasPaused };
       }
     }
     return null;
@@ -457,7 +592,12 @@ export class RoomManager {
   ): void {
     this.cancelFinalCallTimer(roomCode);
     const timer = this.scheduler.setTimeout(() => {
-      this.handleFinalCallTimeout(roomCode);
+      const run = () => this.handleFinalCallTimeout(roomCode);
+      if (this.actionQueue) {
+        this.actionQueue(roomCode, run);
+      } else {
+        run();
+      }
     }, timeoutMs);
     this.finalCallTimers.set(roomCode.toUpperCase(), timer);
   }
@@ -510,6 +650,7 @@ export class RoomManager {
     }
     this.cleanupTimers.clear();
     this.playerDisconnectTimers.clear();
+    this.playerGraceDeadlines.clear();
     this.finalCallTimers.clear();
     this.rooms.clear();
   }

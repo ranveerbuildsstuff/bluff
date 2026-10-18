@@ -156,7 +156,73 @@ export function toPublicState(
     playSeq: state.playSeq,
     winnerId: state.winnerId,
     finalCallDeadline: state.finalCallDeadline ?? null,
+    pausedFrom: state.pausedFrom ?? null,
+    finalCallRemainingMs: state.finalCallRemainingMs ?? null,
+    rejoinDeadline: state.rejoinDeadline ?? null,
+    endedReason: state.endedReason ?? null,
+    abandonedPlayerName: state.abandonedPlayerName ?? null,
     serverNow: now,
+  };
+}
+
+export function pauseGame(
+  state: GameState,
+  now: number = Date.now(),
+  graceMs: number = 60_000
+): GameState {
+  if (state.status !== 'PLAYING' && state.status !== 'FINAL_CALL') {
+    return state;
+  }
+
+  const pausedFrom = state.status;
+  let finalCallRemainingMs: number | null = null;
+  if (pausedFrom === 'FINAL_CALL' && state.finalCallDeadline) {
+    finalCallRemainingMs = Math.max(0, state.finalCallDeadline - now);
+  }
+
+  return {
+    ...state,
+    status: 'PAUSED',
+    pausedFrom,
+    finalCallRemainingMs,
+    finalCallDeadline: null,
+    rejoinDeadline: now + graceMs,
+  };
+}
+
+export function resumeGame(
+  state: GameState,
+  now: number = Date.now()
+): GameState {
+  if (state.status !== 'PAUSED') {
+    return state;
+  }
+
+  const nextStatus = state.pausedFrom ?? 'PLAYING';
+  let finalCallDeadline: number | null = null;
+
+  if (nextStatus === 'FINAL_CALL') {
+    const remaining = state.finalCallRemainingMs ?? 10_000;
+    finalCallDeadline = now + remaining;
+  }
+
+  return {
+    ...state,
+    status: nextStatus,
+    finalCallDeadline,
+    rejoinDeadline: null,
+  };
+}
+
+export function abandonGame(state: GameState, abandonedPlayerName?: string): GameState {
+  return {
+    ...state,
+    status: 'GAME_OVER',
+    endedReason: 'PLAYER_ABANDONED',
+    abandonedPlayerName: abandonedPlayerName ?? null,
+    winnerId: undefined,
+    finalCallDeadline: null,
+    rejoinDeadline: null,
   };
 }
 
@@ -165,6 +231,7 @@ export type PlayTurnResult =
   | {
       ok: false;
       code:
+        | 'GAME_PAUSED'
         | 'GAME_NOT_PLAYING'
         | 'NOT_YOUR_TURN'
         | 'INVALID_CARD_COUNT'
@@ -179,6 +246,14 @@ export function playTurn(
   playerId: string,
   cardIds: readonly string[]
 ): PlayTurnResult {
+  if (state.status === 'PAUSED') {
+    return {
+      ok: false,
+      code: 'GAME_PAUSED',
+      message: 'Game is paused waiting for players to reconnect',
+    };
+  }
+
   if (state.status !== 'PLAYING') {
     return {
       ok: false,
@@ -288,6 +363,7 @@ export type CallBluffResult =
   | {
       ok: false;
       code:
+        | 'GAME_PAUSED'
         | 'GAME_NOT_IN_CALLABLE_STATE'
         | 'PILE_EMPTY'
         | 'STALE_CHALLENGE'
@@ -301,6 +377,13 @@ export function callBluff(
   challengerId: string,
   playSeq: number
 ): CallBluffResult {
+  if (state.status === 'PAUSED') {
+    return {
+      ok: false,
+      code: 'GAME_PAUSED',
+      message: 'Game is paused waiting for players to reconnect',
+    };
+  }
   if (state.centralPile.length === 0) {
     if (state.playSeq > 0) {
       return {

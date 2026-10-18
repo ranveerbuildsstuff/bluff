@@ -86,6 +86,11 @@ export const GameStateSchema = z
     playSeq: z.number().int().nonnegative(),
     winnerId: z.string().uuid().optional(),
     finalCallDeadline: z.number().nullable().optional(),
+    pausedFrom: z.enum(['PLAYING', 'FINAL_CALL']).nullable().optional(),
+    finalCallRemainingMs: z.number().nullable().optional(),
+    rejoinDeadline: z.number().nullable().optional(),
+    endedReason: z.string().nullable().optional(),
+    abandonedPlayerName: z.string().nullable().optional(),
   })
   .strict();
 export type GameState = z.infer<typeof GameStateSchema>;
@@ -134,6 +139,11 @@ export const PublicGameStateSchema = z
     playSeq: z.number().int().nonnegative(),
     winnerId: z.string().uuid().optional(),
     finalCallDeadline: z.number().nullable().optional(),
+    pausedFrom: z.enum(['PLAYING', 'FINAL_CALL']).nullable().optional(),
+    finalCallRemainingMs: z.number().nullable().optional(),
+    rejoinDeadline: z.number().nullable().optional(),
+    endedReason: z.string().nullable().optional(),
+    abandonedPlayerName: z.string().nullable().optional(),
     serverNow: z.number(),
   })
   .strict();
@@ -264,7 +274,26 @@ export type ChallengeResult = z.infer<typeof ChallengeResultSchema>;
 export const PlayAgainRequestSchema = z.object({}).strict();
 export type PlayAgainRequest = z.infer<typeof PlayAgainRequestSchema>;
 
+export const PlayerDisconnectedSchema = z
+  .object({
+    playerId: z.string().uuid(),
+    name: z.string().min(1).max(16),
+    rejoinDeadline: z.number(),
+  })
+  .strict();
+export type PlayerDisconnected = z.infer<typeof PlayerDisconnectedSchema>;
+
+export const PlayerReconnectedSchema = z
+  .object({
+    playerId: z.string().uuid(),
+    name: z.string().min(1).max(16),
+  })
+  .strict();
+export type PlayerReconnected = z.infer<typeof PlayerReconnectedSchema>;
+
 export const FINAL_CALL_MS = 10 * 1000;
+export const REJOIN_GRACE_MS = 60 * 1000;
+export const ABANDONED_CLEANUP_MS = 2 * 60 * 1000;
 
 // Socket Event Names
 export const CLIENT_EVENTS = {
@@ -286,6 +315,8 @@ export const SERVER_EVENTS = {
   SETTINGS_CLAMPED: 'settings_clamped',
   GAME_STATE: 'game_state',
   CHALLENGE_RESULT: 'challenge_result',
+  PLAYER_DISCONNECTED: 'player_disconnected',
+  PLAYER_RECONNECTED: 'player_reconnected',
 } as const;
 
 // Helper calculations

@@ -12,6 +12,8 @@ import {
   ChallengeResultSchema,
   SettingsClampedSchema,
   ErrorEventSchema,
+  PlayerDisconnectedSchema,
+  PlayerReconnectedSchema,
 } from '@bluff/shared';
 import { socket, updateSocketAuth, setupVisibilityReconnect } from './socket';
 import { setupConnectionTracker } from './connection-tracker';
@@ -107,6 +109,18 @@ export function App() {
       );
     };
 
+    const onPlayerDisconnected = (data: unknown) => {
+      const parsed = PlayerDisconnectedSchema.safeParse(data);
+      if (!parsed.success) return;
+      addToast(`${parsed.data.name} disconnected. Game paused.`, 'info');
+    };
+
+    const onPlayerReconnected = (data: unknown) => {
+      const parsed = PlayerReconnectedSchema.safeParse(data);
+      if (!parsed.success) return;
+      addToast(`${parsed.data.name} reconnected.`, 'info');
+    };
+
     const onError = (data: unknown) => {
       const parsed = ErrorEventSchema.safeParse(data);
       const message = parsed.success ? parsed.data.message : 'An error occurred';
@@ -131,6 +145,8 @@ export function App() {
     socket.on(SERVER_EVENTS.GAME_STATE, onGameState);
     socket.on(SERVER_EVENTS.CHALLENGE_RESULT, onChallengeResult);
     socket.on(SERVER_EVENTS.SETTINGS_CLAMPED, onSettingsClamped);
+    socket.on(SERVER_EVENTS.PLAYER_DISCONNECTED, onPlayerDisconnected);
+    socket.on(SERVER_EVENTS.PLAYER_RECONNECTED, onPlayerReconnected);
     socket.on(SERVER_EVENTS.ERROR, onError);
 
     if (socket.connected && session) {
@@ -149,6 +165,8 @@ export function App() {
       socket.off(SERVER_EVENTS.GAME_STATE, onGameState);
       socket.off(SERVER_EVENTS.CHALLENGE_RESULT, onChallengeResult);
       socket.off(SERVER_EVENTS.SETTINGS_CLAMPED, onSettingsClamped);
+      socket.off(SERVER_EVENTS.PLAYER_DISCONNECTED, onPlayerDisconnected);
+      socket.off(SERVER_EVENTS.PLAYER_RECONNECTED, onPlayerReconnected);
       socket.off(SERVER_EVENTS.ERROR, onError);
       cleanupReconnect();
     };
