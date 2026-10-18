@@ -1,12 +1,24 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { PublicGameState, sortCards, Card, Suit, rankLabel } from '@bluff/shared';
+import {
+  PublicGameState,
+  sortCards,
+  Card,
+  Suit,
+  rankLabel,
+  ChallengeResult,
+} from '@bluff/shared';
 
 interface GameScreenProps {
   gameState: PublicGameState;
   currentPlayerId: string;
   isSocketConnected: boolean;
+  isHost: boolean;
+  challengeResult: ChallengeResult | null;
+  onDismissChallengeResult: () => void;
   onLeaveRoom: () => void;
   onPlayTurn: (cardIds: string[]) => void;
+  onCallBluff: (playSeq: number) => void;
+  onPlayAgain: () => void;
 }
 
 const SUIT_ICONS: Record<Suit, string> = {
@@ -27,21 +39,66 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   gameState,
   currentPlayerId,
   isSocketConnected,
+  isHost,
+  challengeResult,
+  onDismissChallengeResult,
   onLeaveRoom,
   onPlayTurn,
+  onCallBluff,
+  onPlayAgain,
 }) => {
   const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
+  const [isCallingBluff, setIsCallingBluff] = useState(false);
+  const [flipped, setFlipped] = useState(false);
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
 
   // Clear selection after a successful play or status change
   useEffect(() => {
     setSelectedCardIds([]);
-  }, [gameState.playSeq, gameState.status]);
+    setIsCallingBluff(false);
+  }, [gameState.playSeq, gameState.status, gameState.pile.count]);
 
   // Purge any selected cards that are no longer in myHand
   useEffect(() => {
     const handCardIds = new Set(gameState.myHand.map((c) => c.id));
     setSelectedCardIds((prev) => prev.filter((id) => handCardIds.has(id)));
   }, [gameState.myHand]);
+
+  // Auto-dismiss reveal overlay after ~3.5 seconds
+  useEffect(() => {
+    if (!challengeResult) return;
+    setFlipped(false);
+    const flipTimer = setTimeout(() => setFlipped(true), 150);
+    const dismissTimer = setTimeout(() => {
+      onDismissChallengeResult();
+    }, 3500);
+
+    return () => {
+      clearTimeout(flipTimer);
+      clearTimeout(dismissTimer);
+    };
+  }, [challengeResult, onDismissChallengeResult]);
+
+  // FINAL_CALL countdown using serverNow offset
+  useEffect(() => {
+    if (gameState.status !== 'FINAL_CALL' || !gameState.finalCallDeadline) {
+      setRemainingSeconds(null);
+      return;
+    }
+
+    const serverOffset = gameState.serverNow - Date.now();
+
+    const updateTimer = () => {
+      const currentServerTime = Date.now() + serverOffset;
+      const remainingMs = (gameState.finalCallDeadline as number) - currentServerTime;
+      const sec = Math.max(0, Math.ceil(remainingMs / 1000));
+      setRemainingSeconds(sec);
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 100);
+    return () => clearInterval(interval);
+  }, [gameState.status, gameState.finalCallDeadline, gameState.serverNow]);
 
   const sortedHand = useMemo(() => sortCards(gameState.myHand), [gameState.myHand]);
 
@@ -53,10 +110,20 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   const opponents = gameState.players.filter((p) => p.playerId !== currentPlayerId);
 
-  const lastPlayPlayer = gameState.pile.lastPlay
-    ? gameState.players.find((p) => p.playerId === gameState.pile.lastPlay?.playerId)
+  const lastPlay = gameState.pile.lastPlay;
+  const lastPlayPlayer = lastPlay
+    ? gameState.players.find((p) => p.playerId === lastPlay.playerId)
     : null;
   const lastPlayPlayerName = lastPlayPlayer ? lastPlayPlayer.name : 'Someone';
+
+  const hasLastPlay = gameState.pile.count > 0 && lastPlay !== null;
+  const isLastPlayMine = lastPlay?.playerId === currentPlayerId;
+  const isCallBluffEligible =
+    hasLastPlay &&
+    !isLastPlayMine &&
+    (gameState.status === 'PLAYING' || gameState.status === 'FINAL_CALL');
+
+  const canCallBluff = isCallBluffEligible && !isCallingBluff;
 
   const toggleCardSelection = (cardId: string) => {
     setSelectedCardIds((prev) => {
@@ -79,9 +146,18 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     }
   };
 
+  const handleCallBluffClick = () => {
+    if (canCallBluff && lastPlay) {
+      setIsCallingBluff(true);
+      onCallBluff(lastPlay.playSeq);
+    }
+  };
+
+  const winnerPlayer = gameState.players.find((p) => p.playerId === gameState.winnerId);
+
   return (
-    <div className="w-full max-w-[360px] mx-auto px-3 py-4 flex flex-col justify-between min-h-[640px] text-white">
-      {/* Top Header & Game Status */}
+    <div className="w-full max-w-[360px] mx-auto px-3 py-4 flex flex-col justify-between min-h-[640px] text-white relative">
+      {/* Top Header & Connection */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -105,17 +181,25 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           </button>
         </div>
 
-        {/* Final Call Banner if applicable */}
+        {/* Final Call Banner with Countdown */}
         {gameState.status === 'FINAL_CALL' && (
-          <div className="bg-gradient-to-r from-red-600/30 via-amber-600/30 to-red-600/30 border border-red-500/50 rounded-2xl p-3 text-center mb-3 shadow-lg animate-pulse">
-            <span className="text-xs font-extrabold text-red-300 uppercase tracking-wider block">
-              ★ FINAL CALL ★
-            </span>
-            <span className="text-xs text-slate-200">
-              {gameState.players.find((p) => p.playerId === gameState.winnerId)?.name ??
-                'A player'}{' '}
-              has played all their cards!
-            </span>
+          <div className="bg-gradient-to-r from-red-600/40 via-amber-600/40 to-red-600/40 border-2 border-red-500/70 rounded-2xl p-3 text-center mb-3 shadow-xl">
+            <div className="flex items-center justify-between px-1 mb-1">
+              <span className="text-xs font-black text-red-300 uppercase tracking-widest animate-pulse">
+                🚨 FINAL CALL
+              </span>
+              {remainingSeconds !== null && (
+                <span className="font-mono text-sm font-black text-amber-300 px-2 py-0.5 rounded-md bg-black/50 border border-amber-400/50 shadow-inner">
+                  {remainingSeconds}s left
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-200">
+              <strong className="text-amber-300 font-bold">
+                {winnerPlayer?.name ?? 'A player'}
+              </strong>{' '}
+              played all their cards! Call bluff before the timer expires or they win!
+            </p>
           </div>
         )}
 
@@ -145,7 +229,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               : 'bg-slate-800/60 border-slate-700/60 text-slate-300'
           }`}
         >
-          {isMyTurn ? (
+          {gameState.status === 'FINAL_CALL' ? (
+            <span className="text-amber-300 tracking-wide">
+              Final Call in progress — Call Bluff now!
+            </span>
+          ) : isMyTurn ? (
             <span className="text-sm font-black tracking-wide">
               ★ YOUR TURN — Select 1 to 4 cards
             </span>
@@ -163,10 +251,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           <div className="flex flex-col items-center justify-center py-1">
             {/* Visual Stack of Cards */}
             <div className="relative w-20 h-28 flex items-center justify-center">
-              {/* Stack effect layers */}
               <div className="absolute inset-0 bg-indigo-950 rounded-xl border border-indigo-500/30 rotate-6 translate-x-1 translate-y-1 opacity-70" />
               <div className="absolute inset-0 bg-indigo-900 rounded-xl border border-indigo-400/40 -rotate-3 -translate-x-1 translate-y-0.5 opacity-80" />
-              {/* Top card back */}
               <div className="relative w-full h-full bg-gradient-to-br from-indigo-700 via-indigo-800 to-slate-900 rounded-xl border-2 border-indigo-400/60 shadow-lg flex flex-col items-center justify-center p-2">
                 <div className="w-full h-full rounded-lg border border-indigo-400/30 flex flex-col items-center justify-center bg-indigo-950/40">
                   <span className="font-mono text-2xl font-black text-indigo-200">
@@ -180,18 +266,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             </div>
 
             {/* Pile Last Play Announcement */}
-            {gameState.pile.lastPlay ? (
+            {lastPlay ? (
               <div className="mt-3 text-xs text-slate-200 bg-slate-900/80 px-3 py-1.5 rounded-lg border border-slate-700/80 shadow-inner">
                 <span className="font-semibold text-indigo-300">
                   {lastPlayPlayerName}
                 </span>{' '}
                 played{' '}
                 <span className="font-bold text-amber-300 font-mono">
-                  {gameState.pile.lastPlay.count} x{' '}
-                  {rankLabel(
-                    gameState.pile.lastPlay.declaredRank,
-                    gameState.pile.lastPlay.count
-                  )}
+                  {lastPlay.count} x {rankLabel(lastPlay.declaredRank, lastPlay.count)}
                 </span>
               </div>
             ) : (
@@ -257,8 +339,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         </div>
       </div>
 
-      {/* Your Hand & Sticky Action Bar (Bottom Section) */}
+      {/* Your Hand & Sticky Action Bar */}
       <div className="flex flex-col mt-auto">
+        {/* Hand container */}
         <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-3 shadow-xl">
           <div className="flex items-center justify-between mb-2 px-1">
             <div className="flex items-center gap-2">
@@ -276,103 +359,328 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             </span>
           </div>
 
-          {/* Scrollable Cards Hand with Lift Effect on Selection */}
+          {/* Cards Hand */}
           <div
             tabIndex={0}
             aria-label="Your hand of cards"
             className="flex gap-2 overflow-x-auto pb-3 pt-4 px-1 max-h-[160px] flex-nowrap scrollbar-thin items-end"
             style={{ touchAction: 'manipulation' }}
           >
-            {sortedHand.map((card: Card) => {
-              const icon = SUIT_ICONS[card.suit];
-              const colorClass = SUIT_COLORS[card.suit];
-              const isSelected = selectedCardIds.includes(card.id);
+            {sortedHand.length === 0 ? (
+              <div className="w-full text-center py-4 text-xs font-semibold text-amber-300 italic">
+                No cards remaining in hand
+              </div>
+            ) : (
+              sortedHand.map((card: Card) => {
+                const icon = SUIT_ICONS[card.suit];
+                const colorClass = SUIT_COLORS[card.suit];
+                const isSelected = selectedCardIds.includes(card.id);
 
-              return (
-                <button
-                  type="button"
-                  key={card.id}
-                  onClick={() => toggleCardSelection(card.id)}
-                  aria-pressed={isSelected}
-                  aria-label={`${card.rank} of ${card.suit}${
-                    isSelected ? ', selected' : ''
-                  }`}
-                  className={`shrink-0 w-12 h-18 sm:w-14 sm:h-20 bg-white rounded-lg border-2 shadow-md p-1 flex flex-col justify-between items-center select-none min-h-[44px] min-w-[44px] transition-all transform cursor-pointer ${
-                    isSelected
-                      ? '-translate-y-3.5 border-amber-400 ring-2 ring-amber-400 shadow-amber-500/30 shadow-lg bg-amber-50'
-                      : 'border-slate-300 hover:border-slate-400 active:scale-95'
-                  }`}
-                  style={{ touchAction: 'manipulation' }}
-                >
-                  <div className="w-full flex items-center justify-between leading-none pointer-events-none">
-                    <span className={`font-mono text-xs font-extrabold ${colorClass}`}>
-                      {card.rank}
-                    </span>
-                    <span className={`text-[10px] leading-none ${colorClass}`}>
-                      {icon}
-                    </span>
-                  </div>
-
-                  <div
-                    className={`text-base font-bold ${colorClass} my-auto pointer-events-none`}
+                return (
+                  <button
+                    type="button"
+                    key={card.id}
+                    onClick={() => toggleCardSelection(card.id)}
+                    aria-pressed={isSelected}
+                    aria-label={`${card.rank} of ${card.suit}${
+                      isSelected ? ', selected' : ''
+                    }`}
+                    className={`shrink-0 w-12 h-18 sm:w-14 sm:h-20 bg-white rounded-lg border-2 shadow-md p-1 flex flex-col justify-between items-center select-none min-h-[44px] min-w-[44px] transition-all transform cursor-pointer ${
+                      isSelected
+                        ? '-translate-y-3.5 border-amber-400 ring-2 ring-amber-400 shadow-amber-500/30 shadow-lg bg-amber-50'
+                        : 'border-slate-300 hover:border-slate-400 active:scale-95'
+                    }`}
+                    style={{ touchAction: 'manipulation' }}
                   >
-                    {icon}
-                  </div>
+                    <div className="w-full flex items-center justify-between leading-none pointer-events-none">
+                      <span className={`font-mono text-xs font-extrabold ${colorClass}`}>
+                        {card.rank}
+                      </span>
+                      <span className={`text-[10px] leading-none ${colorClass}`}>
+                        {icon}
+                      </span>
+                    </div>
 
-                  <div className="w-full flex items-center justify-between leading-none rotate-180 pointer-events-none">
-                    <span className={`font-mono text-xs font-extrabold ${colorClass}`}>
-                      {card.rank}
-                    </span>
-                    <span className={`text-[10px] leading-none ${colorClass}`}>
+                    <div
+                      className={`text-base font-bold ${colorClass} my-auto pointer-events-none`}
+                    >
                       {icon}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
+                    </div>
+
+                    <div className="w-full flex items-center justify-between leading-none rotate-180 pointer-events-none">
+                      <span className={`font-mono text-xs font-extrabold ${colorClass}`}>
+                        {card.rank}
+                      </span>
+                      <span className={`text-[10px] leading-none ${colorClass}`}>
+                        {icon}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
 
-        {/* Sticky Bottom Action Bar */}
-        <div className="sticky bottom-0 left-0 right-0 pt-2 pb-1 bg-slate-900/95 backdrop-blur-sm border-t border-slate-800 -mx-3 px-3 mt-2">
+        {/* Sticky Bottom Action Area */}
+        <div className="sticky bottom-0 left-0 right-0 pt-2 pb-1 bg-slate-900/95 backdrop-blur-sm border-t border-slate-800 -mx-3 px-3 mt-2 flex flex-col gap-2">
+          {/* Call Bluff Button */}
           <button
             type="button"
-            disabled={!canPlay}
-            onClick={handlePlayClick}
-            className={`w-full py-3 px-4 rounded-xl font-bold text-sm tracking-wide transition-all min-h-[48px] flex items-center justify-center shadow-lg ${
-              canPlay
-                ? 'bg-amber-400 hover:bg-amber-300 active:scale-[0.98] text-slate-950 shadow-amber-500/25 ring-2 ring-amber-300 cursor-pointer'
-                : 'bg-slate-800 border border-slate-700/80 text-slate-400 cursor-not-allowed opacity-80'
+            disabled={!canCallBluff}
+            onClick={handleCallBluffClick}
+            className={`w-full py-3 px-4 rounded-xl font-black text-sm tracking-wide transition-all min-h-[48px] flex items-center justify-center shadow-lg ${
+              canCallBluff
+                ? 'bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white shadow-rose-600/30 ring-2 ring-rose-400 cursor-pointer animate-pulse'
+                : 'bg-slate-800/80 border border-slate-700/60 text-slate-500 cursor-not-allowed opacity-60'
             }`}
             style={{ touchAction: 'manipulation' }}
           >
-            {selectedCount > 0 ? (
-              selectedCount === 1 ? (
-                <span>
-                  Play 1 card as{' '}
-                  <span className="font-extrabold">
-                    {gameState.requiredRank === 'A' ? 'an' : 'a'}{' '}
-                    {rankLabel(gameState.requiredRank, 1)}
-                  </span>
-                </span>
+            {isCallingBluff ? (
+              <span>Calling Bluff...</span>
+            ) : hasLastPlay ? (
+              isLastPlayMine ? (
+                <span>Call Bluff (Your Play)</span>
               ) : (
                 <span>
-                  Play {selectedCount} cards as{' '}
-                  <span className="font-extrabold">
-                    {rankLabel(gameState.requiredRank, selectedCount)}
-                  </span>
+                  Call Bluff on {lastPlayPlayerName}
+                  {lastPlay ? ` (${lastPlay.count} cards)` : ''}
                 </span>
               )
             ) : (
-              <span>
-                {isMyTurn
-                  ? `Select 1–4 cards to play as ${rankLabel(gameState.requiredRank, 2)}`
-                  : `Waiting for ${currentTurnPlayer?.name ?? 'turn'}...`}
-              </span>
+              <span>Call Bluff (Pile Empty)</span>
             )}
           </button>
+
+          {/* Play Cards Action (only in PLAYING state) */}
+          {gameState.status === 'PLAYING' && (
+            <button
+              type="button"
+              disabled={!canPlay}
+              onClick={handlePlayClick}
+              className={`w-full py-2.5 px-4 rounded-xl font-bold text-sm tracking-wide transition-all min-h-[48px] flex items-center justify-center shadow-md ${
+                canPlay
+                  ? 'bg-amber-400 hover:bg-amber-300 active:scale-[0.98] text-slate-950 shadow-amber-500/25 ring-2 ring-amber-300 cursor-pointer'
+                  : 'bg-slate-800/80 border border-slate-700/60 text-slate-400 cursor-not-allowed opacity-80'
+              }`}
+              style={{ touchAction: 'manipulation' }}
+            >
+              {selectedCount > 0 ? (
+                selectedCount === 1 ? (
+                  <span>
+                    Play 1 card as{' '}
+                    <span className="font-extrabold">
+                      {gameState.requiredRank === 'A' ? 'an' : 'a'}{' '}
+                      {rankLabel(gameState.requiredRank, 1)}
+                    </span>
+                  </span>
+                ) : (
+                  <span>
+                    Play {selectedCount} cards as{' '}
+                    <span className="font-extrabold">
+                      {rankLabel(gameState.requiredRank, selectedCount)}
+                    </span>
+                  </span>
+                )
+              ) : (
+                <span>
+                  {isMyTurn
+                    ? `Select 1–4 cards to play as ${rankLabel(gameState.requiredRank, 2)}`
+                    : `Waiting for ${currentTurnPlayer?.name ?? 'turn'}...`}
+                </span>
+              )}
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Reveal Overlay (Flip cards, Bluff/Truthful, who picks up) */}
+      {challengeResult && (
+        <div
+          role="dialog"
+          aria-label="Challenge Result"
+          onClick={onDismissChallengeResult}
+          className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex flex-col items-center justify-center p-4 cursor-pointer select-none"
+          style={{ touchAction: 'manipulation' }}
+        >
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              onDismissChallengeResult();
+            }}
+            className={`w-full max-w-[340px] rounded-3xl border-2 p-5 text-center shadow-2xl flex flex-col items-center gap-3 transition-all ${
+              challengeResult.wasBluff
+                ? 'bg-gradient-to-b from-red-950/90 to-slate-900 border-red-500/80 shadow-red-500/20'
+                : 'bg-gradient-to-b from-emerald-950/90 to-slate-900 border-emerald-500/80 shadow-emerald-500/20'
+            }`}
+          >
+            {/* Banner */}
+            <div
+              className={`px-4 py-1.5 rounded-full text-sm font-black tracking-widest uppercase border shadow-md ${
+                challengeResult.wasBluff
+                  ? 'bg-red-500 text-white border-red-300 shadow-red-500/40'
+                  : 'bg-emerald-500 text-slate-950 border-emerald-300 shadow-emerald-500/40'
+              }`}
+            >
+              {challengeResult.wasBluff ? '🚨 BLUFF! 🚨' : '✓ TRUTHFUL! ✓'}
+            </div>
+
+            {/* Narrative */}
+            <div className="text-xs text-slate-200">
+              <span className="font-bold text-white">
+                {gameState.players.find(
+                  (p) => p.playerId === challengeResult.challengerId
+                )?.name ?? 'Challenger'}
+              </span>{' '}
+              called bluff on{' '}
+              <span className="font-bold text-white">
+                {gameState.players.find((p) => p.playerId === challengeResult.accusedId)
+                  ?.name ?? 'Accused'}
+              </span>
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                Claimed:{' '}
+                <span className="font-bold text-amber-300 font-mono">
+                  {challengeResult.revealedCards.length} x{' '}
+                  {rankLabel(
+                    challengeResult.declaredRank,
+                    challengeResult.revealedCards.length
+                  )}
+                </span>
+              </div>
+            </div>
+
+            {/* Revealed Cards Flip Area */}
+            <div className="flex items-center justify-center gap-2 py-2 flex-wrap">
+              {challengeResult.revealedCards.map((card) => {
+                const icon = SUIT_ICONS[card.suit];
+                const colorClass = SUIT_COLORS[card.suit];
+
+                return (
+                  <div
+                    key={card.id}
+                    className="relative w-14 h-20 sm:w-16 sm:h-22"
+                    style={{ perspective: '1000px' }}
+                  >
+                    <div
+                      className="relative w-full h-full transition-transform duration-700"
+                      style={{
+                        transformStyle: 'preserve-3d',
+                        transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
+                      }}
+                    >
+                      {/* Back */}
+                      <div
+                        className="absolute inset-0 w-full h-full rounded-xl border-2 border-indigo-400 bg-gradient-to-br from-indigo-700 via-indigo-900 to-slate-900 flex items-center justify-center p-1 shadow-lg"
+                        style={{ backfaceVisibility: 'hidden' }}
+                      >
+                        <div className="w-full h-full rounded-lg border border-indigo-300/40 bg-indigo-950/60 flex items-center justify-center">
+                          <span className="text-xl">🂠</span>
+                        </div>
+                      </div>
+
+                      {/* Front (flipped) */}
+                      <div
+                        className="absolute inset-0 w-full h-full rounded-xl border-2 border-slate-300 bg-white p-1 flex flex-col justify-between items-center shadow-xl"
+                        style={{
+                          backfaceVisibility: 'hidden',
+                          transform: 'rotateY(180deg)',
+                        }}
+                      >
+                        <div className="w-full flex items-center justify-between leading-none pointer-events-none">
+                          <span className={`font-mono text-xs font-black ${colorClass}`}>
+                            {card.rank}
+                          </span>
+                          <span className={`text-[10px] leading-none ${colorClass}`}>
+                            {icon}
+                          </span>
+                        </div>
+                        <div
+                          className={`text-base font-bold ${colorClass} my-auto pointer-events-none`}
+                        >
+                          {icon}
+                        </div>
+                        <div className="w-full flex items-center justify-between leading-none rotate-180 pointer-events-none">
+                          <span className={`font-mono text-xs font-black ${colorClass}`}>
+                            {card.rank}
+                          </span>
+                          <span className={`text-[10px] leading-none ${colorClass}`}>
+                            {icon}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Pickup Announcement */}
+            <div className="bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-200">
+              <span className="font-extrabold text-amber-300">
+                {gameState.players.find(
+                  (p) => p.playerId === challengeResult.pickedUpById
+                )?.name ?? 'Loser'}
+              </span>{' '}
+              picks up the whole pile ({challengeResult.pickedUpCount}{' '}
+              {challengeResult.pickedUpCount === 1 ? 'card' : 'cards'})!
+            </div>
+
+            <span className="text-[10px] text-slate-400 tracking-wider uppercase mt-1 animate-pulse">
+              Tap anywhere to dismiss
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Game Over Screen */}
+      {gameState.status === 'GAME_OVER' && (
+        <div className="fixed inset-0 z-40 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-4">
+          <div className="w-full max-w-[340px] bg-slate-900 border-2 border-amber-500/60 rounded-3xl p-6 text-center shadow-2xl flex flex-col items-center gap-4">
+            <div className="w-16 h-16 rounded-full bg-amber-500/20 border-2 border-amber-400 flex items-center justify-center text-3xl shadow-lg">
+              🏆
+            </div>
+            <div>
+              <h2 className="text-2xl font-black text-amber-300 tracking-wider">
+                GAME OVER
+              </h2>
+              <p className="text-base text-slate-100 font-bold mt-1">
+                {winnerPlayer?.playerId === currentPlayerId
+                  ? '🎉 YOU WON THE GAME! 🎉'
+                  : `👑 ${winnerPlayer?.name ?? 'A player'} Wins!`}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                Emptied their hand and survived the final call!
+              </p>
+            </div>
+
+            <div className="w-full flex flex-col gap-2.5 mt-2">
+              {isHost ? (
+                <button
+                  type="button"
+                  onClick={onPlayAgain}
+                  className="w-full py-3.5 px-4 rounded-xl font-black text-sm tracking-wide bg-emerald-500 hover:bg-emerald-400 active:scale-[0.98] text-slate-950 shadow-lg shadow-emerald-500/25 ring-2 ring-emerald-300 min-h-[48px] flex items-center justify-center cursor-pointer transition-all"
+                  style={{ touchAction: 'manipulation' }}
+                >
+                  Play Again
+                </button>
+              ) : (
+                <div className="py-3 px-4 rounded-xl text-xs font-semibold text-slate-400 bg-slate-800/80 border border-slate-700 text-center">
+                  Waiting for host to start a new game...
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={onLeaveRoom}
+                className="w-full py-3 px-4 rounded-xl font-bold text-xs text-rose-400 hover:text-rose-300 active:scale-[0.98] bg-rose-500/10 border border-rose-500/30 min-h-[44px] flex items-center justify-center transition-all"
+                style={{ touchAction: 'manipulation' }}
+              >
+                Leave Room
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

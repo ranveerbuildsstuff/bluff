@@ -1,5 +1,6 @@
 import {
   Card,
+  ChallengeResult,
   GameState,
   PileEntry,
   PublicGameState,
@@ -154,6 +155,7 @@ export function toPublicState(
     pile: publicPile,
     playSeq: state.playSeq,
     winnerId: state.winnerId,
+    finalCallDeadline: state.finalCallDeadline ?? null,
     serverNow: now,
   };
 }
@@ -275,4 +277,134 @@ export function playTurn(
   };
 
   return { ok: true, state: nextState };
+}
+
+export type CallBluffResult =
+  | {
+      ok: true;
+      state: GameState;
+      result: ChallengeResult;
+    }
+  | {
+      ok: false;
+      code:
+        | 'GAME_NOT_IN_CALLABLE_STATE'
+        | 'PILE_EMPTY'
+        | 'STALE_CHALLENGE'
+        | 'PLAYER_NOT_FOUND'
+        | 'CANNOT_CHALLENGE_SELF';
+      message: string;
+    };
+
+export function callBluff(
+  state: GameState,
+  challengerId: string,
+  playSeq: number
+): CallBluffResult {
+  if (state.centralPile.length === 0) {
+    if (state.playSeq > 0) {
+      return {
+        ok: false,
+        code: 'STALE_CHALLENGE',
+        message: 'Challenge is stale',
+      };
+    }
+    return {
+      ok: false,
+      code: 'PILE_EMPTY',
+      message: 'Central pile is empty',
+    };
+  }
+
+  const latestEntry = state.centralPile[state.centralPile.length - 1];
+
+  if (playSeq !== latestEntry.playSeq) {
+    return {
+      ok: false,
+      code: 'STALE_CHALLENGE',
+      message: 'Challenge is stale',
+    };
+  }
+
+  if (state.status !== 'PLAYING' && state.status !== 'FINAL_CALL') {
+    return {
+      ok: false,
+      code: 'GAME_NOT_IN_CALLABLE_STATE',
+      message: `Cannot challenge bluff when game status is ${state.status}`,
+    };
+  }
+
+  const challenger = state.players.find((p) => p.playerId === challengerId);
+  if (!challenger) {
+    return {
+      ok: false,
+      code: 'PLAYER_NOT_FOUND',
+      message: 'Player not found in game',
+    };
+  }
+
+  if (challengerId === latestEntry.playerId) {
+    return {
+      ok: false,
+      code: 'CANNOT_CHALLENGE_SELF',
+      message: 'Cannot challenge your own play',
+    };
+  }
+
+  const accusedId = latestEntry.playerId;
+  const truthful = latestEntry.cards.every(
+    (card) => card.rank === latestEntry.declaredRank
+  );
+  const wasBluff = !truthful;
+
+  const loserId = truthful ? challengerId : accusedId;
+  const winnerId = truthful ? accusedId : challengerId;
+
+  const allPileCards = state.centralPile.flatMap((entry) => entry.cards);
+  const pickedUpCount = allPileCards.length;
+
+  const updatedPlayers = state.players.map((p) =>
+    p.playerId === loserId ? { ...p, hand: [...p.hand, ...allPileCards] } : p
+  );
+
+  let nextStatus: RoomStatus = 'PLAYING';
+  let nextWinnerId: string | undefined = undefined;
+
+  if (state.status === 'FINAL_CALL') {
+    if (truthful) {
+      nextStatus = 'GAME_OVER';
+      nextWinnerId = accusedId;
+    } else {
+      nextStatus = 'PLAYING';
+      nextWinnerId = undefined;
+    }
+  }
+
+  const nextState: GameState = {
+    ...state,
+    status: nextStatus,
+    players: updatedPlayers,
+    centralPile: [],
+    currentTurnId: winnerId,
+    requiredRank: state.requiredRank,
+    winnerId: nextWinnerId,
+    finalCallDeadline: null,
+  };
+
+  const challengeResult: ChallengeResult = {
+    playSeq: latestEntry.playSeq,
+    challengerId,
+    accusedId,
+    declaredRank: latestEntry.declaredRank,
+    revealedCards: [...latestEntry.cards],
+    wasBluff,
+    pickedUpById: loserId,
+    pickedUpCount,
+  };
+
+  return {
+    ok: true,
+    state: nextState,
+    result: challengeResult,
+  };
 }

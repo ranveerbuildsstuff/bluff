@@ -85,6 +85,7 @@ export const GameStateSchema = z
     centralPile: z.array(PileEntrySchema),
     playSeq: z.number().int().nonnegative(),
     winnerId: z.string().uuid().optional(),
+    finalCallDeadline: z.number().nullable().optional(),
   })
   .strict();
 export type GameState = z.infer<typeof GameStateSchema>;
@@ -132,6 +133,7 @@ export const PublicGameStateSchema = z
     pile: PublicPileViewSchema,
     playSeq: z.number().int().nonnegative(),
     winnerId: z.string().uuid().optional(),
+    finalCallDeadline: z.number().nullable().optional(),
     serverNow: z.number(),
   })
   .strict();
@@ -238,6 +240,32 @@ export const PlayTurnRequestSchema = z
   .strict();
 export type PlayTurnRequest = z.infer<typeof PlayTurnRequestSchema>;
 
+export const CallBluffRequestSchema = z
+  .object({
+    playSeq: z.number().int().nonnegative(),
+  })
+  .strict();
+export type CallBluffRequest = z.infer<typeof CallBluffRequestSchema>;
+
+export const ChallengeResultSchema = z
+  .object({
+    playSeq: z.number().int().nonnegative(),
+    challengerId: z.string().uuid(),
+    accusedId: z.string().uuid(),
+    declaredRank: RankSchema,
+    revealedCards: z.array(CardSchema),
+    wasBluff: z.boolean(),
+    pickedUpById: z.string().uuid(),
+    pickedUpCount: z.number().int().positive(),
+  })
+  .strict();
+export type ChallengeResult = z.infer<typeof ChallengeResultSchema>;
+
+export const PlayAgainRequestSchema = z.object({}).strict();
+export type PlayAgainRequest = z.infer<typeof PlayAgainRequestSchema>;
+
+export const FINAL_CALL_MS = 10 * 1000;
+
 // Socket Event Names
 export const CLIENT_EVENTS = {
   CREATE_ROOM: 'create_room',
@@ -247,6 +275,8 @@ export const CLIENT_EVENTS = {
   UPDATE_SETTINGS: 'update_settings',
   START_GAME: 'start_game',
   PLAY_TURN: 'play_turn',
+  CALL_BLUFF: 'call_bluff',
+  PLAY_AGAIN: 'play_again',
 } as const;
 
 export const SERVER_EVENTS = {
@@ -255,6 +285,7 @@ export const SERVER_EVENTS = {
   ERROR: 'error',
   SETTINGS_CLAMPED: 'settings_clamped',
   GAME_STATE: 'game_state',
+  CHALLENGE_RESULT: 'challenge_result',
 } as const;
 
 // Helper calculations

@@ -4,7 +4,7 @@
 - [x] Slice 1: Scaffold, identity & lobby
 - [x] Slice 2: Game setup, host settings & hidden information
 - [x] Slice 3: Play loop
-- [ ] Slice 4: Challenge engine, final call & win
+- [x] Slice 4: Challenge engine, final call & win
 - [ ] Slice 5: Reconnection, hardening & proof
 
 ## Decisions & deviations
@@ -134,4 +134,37 @@
   - [packages/shared/src/index.ts](file:///e:/ranveer/BLUFF/packages/shared/src/index.ts)
   - [packages/shared/src/__tests__/rank-label.test.ts](file:///e:/ranveer/BLUFF/packages/shared/src/__tests__/rank-label.test.ts)
   - [apps/web/src/components/GameScreen.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/GameScreen.tsx)
+
+### Slice 4: Challenge engine, final call & win
+- **What was built**:
+  - Shared strict Zod schemas and inferred types: `CallBluffRequestSchema` (`{ playSeq }`), `ChallengeResultSchema` (`{ playSeq, challengerId, accusedId, declaredRank, revealedCards, wasBluff, pickedUpById, pickedUpCount }`), and `PlayAgainRequestSchema` (`{}`).
+  - Added `finalCallDeadline` to `GameStateSchema` and `PublicGameStateSchema`, and defined constant `FINAL_CALL_MS = 10000`.
+  - Pure engine module `apps/server/src/engine/game.ts`:
+    - `callBluff(state, challengerId, playSeq)` validating callable status (`PLAYING` or `FINAL_CALL`), non-empty pile, playSeq freshness (`STALE_CHALLENGE`), challenger presence, and self-challenge rejection (`CANNOT_CHALLENGE_SELF`).
+    - Truthful resolution: verifies all revealed cards match declaredRank. Loser (truthful ? challenger : accused) receives all pile cards into hand; `centralPile` empties; challenge winner takes `currentTurnId`; `requiredRank` is preserved without reset.
+    - Final call resolution: truthful challenge in `FINAL_CALL` triggers `GAME_OVER` with empty-handed player as winner; bluff challenge returns status to `PLAYING`, liar picks up pile, and challenger takes turn.
+  - Concurrency & RoomManager:
+    - In-memory sequential queue `enqueueRoomAction` per room code ensuring sequential processing and preventing concurrent challenge race conditions.
+    - Final call timer behind injectable `Scheduler`: broadcasts `finalCallDeadline` and transitions room to `GAME_OVER` upon 10-second expiry if unchallenged.
+    - `playAgain(roomCode, requesterId)` host-only event resetting room state to `LOBBY` while keeping players and settings.
+  - Web UI:
+    - Fixed-bottom "Call Bluff" button with double-tap prevention, enabled only when pile is non-empty and last play was not yours.
+    - Reveal overlay featuring CSS 3D card flip animation, "BLUFF!" or "TRUTHFUL!" banner, and pickup announcement; auto-dismisses after 3.5s or on tap.
+    - Real-time countdown ticker during `FINAL_CALL` computed from `finalCallDeadline` with `serverNow` clock offset.
+    - Game Over modal with winner celebration and host-only "Play Again" button.
+  - Comprehensive Vitest test suite (`slice4-challenge-engine.test.ts`):
+    - Covers truth case, bluff case, multi-entry pile pickup, winner turn advancement, unchanged requiredRank, stale playSeq rejection, self-challenge rejection, empty pile challenge, simultaneous challenges (second rejected), final call timer expiry to win, final call + truth to win, final call + bluff continuation, revealedCards containment, and 3-tab end-to-end full game integration test proving hidden-information boundary (card faces appear strictly inside `challenge_result`).
+- **Key file paths**:
+  - [packages/shared/src/index.ts](file:///e:/ranveer/BLUFF/packages/shared/src/index.ts)
+  - [apps/server/src/engine/game.ts](file:///e:/ranveer/BLUFF/apps/server/src/engine/game.ts)
+  - [apps/server/src/room-manager.ts](file:///e:/ranveer/BLUFF/apps/server/src/room-manager.ts)
+  - [apps/server/src/socket/index.ts](file:///e:/ranveer/BLUFF/apps/server/src/socket/index.ts)
+  - [apps/web/src/components/GameScreen.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/GameScreen.tsx)
+  - [apps/web/src/App.tsx](file:///e:/ranveer/BLUFF/apps/web/src/App.tsx)
+  - [apps/server/src/__tests__/slice4-challenge-engine.test.ts](file:///e:/ranveer/BLUFF/apps/server/src/__tests__/slice4-challenge-engine.test.ts)
+- **Event names**:
+  - Client -> Server: `call_bluff`, `play_again`
+  - Server -> Client: `challenge_result`, `game_state`, `room_view`, `error`
+- **Deviations**: None.
+
 

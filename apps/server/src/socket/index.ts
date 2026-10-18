@@ -9,6 +9,8 @@ import {
   UpdateSettingsRequestSchema,
   StartGameRequestSchema,
   PlayTurnRequestSchema,
+  CallBluffRequestSchema,
+  PlayAgainRequestSchema,
 } from '@bluff/shared';
 import { handle } from './handle.js';
 import { RoomManager } from '../room-manager.js';
@@ -40,6 +42,20 @@ export function emitGameState(
       io.to(player.socketId).emit(SERVER_EVENTS.GAME_STATE, publicState);
     }
   }
+}
+
+const roomQueues = new Map<string, Promise<unknown>>();
+
+function enqueueRoomAction<T>(roomCode: string, action: () => Promise<T> | T): Promise<T> {
+  const code = roomCode.toUpperCase();
+  const currentQueue = roomQueues.get(code) ?? Promise.resolve();
+  const next = currentQueue.then(() => action()).finally(() => {
+    if (roomQueues.get(code) === next) {
+      roomQueues.delete(code);
+    }
+  });
+  roomQueues.set(code, next);
+  return next as Promise<T>;
 }
 
 export function setupSocketServer(io: SocketIOServer, roomManager: RoomManager): void {
@@ -205,7 +221,7 @@ export function setupSocketServer(io: SocketIOServer, roomManager: RoomManager):
 
     socket.on(
       CLIENT_EVENTS.PLAY_TURN,
-      handle(socket, PlayTurnRequestSchema, (data) => {
+      handle(socket, PlayTurnRequestSchema, async (data) => {
         const found =
           roomManager.findBySocketId(socket.id) ||
           (typeof socket.handshake.auth?.sessionToken === 'string'
@@ -220,22 +236,108 @@ export function setupSocketServer(io: SocketIOServer, roomManager: RoomManager):
           return;
         }
 
-        const result = roomManager.playTurn(
-          found.room.roomCode,
-          found.player.playerId,
-          data.selectedCardIds
-        );
+        await enqueueRoomAction(found.room.roomCode, () => {
+          const result = roomManager.playTurn(
+            found.room.roomCode,
+            found.player.playerId,
+            data.selectedCardIds
+          );
 
-        if (!result.ok) {
+          if (!result.ok) {
+            socket.emit(SERVER_EVENTS.ERROR, {
+              code: result.code,
+              message: result.message,
+            });
+            return;
+          }
+
+          io.to(found.room.roomCode).emit(SERVER_EVENTS.ROOM_VIEW, toRoomView(found.room));
+          emitGameState(io, roomManager, found.room.roomCode);
+        });
+      })
+    );
+
+    socket.on(
+      CLIENT_EVENTS.CALL_BLUFF,
+      handle(socket, CallBluffRequestSchema, async (data) => {
+        const found =
+          roomManager.findBySocketId(socket.id) ||
+          (typeof socket.handshake.auth?.sessionToken === 'string'
+            ? roomManager.findBySessionToken(socket.handshake.auth.sessionToken)
+            : null);
+
+        if (!found) {
           socket.emit(SERVER_EVENTS.ERROR, {
-            code: result.code,
-            message: result.message,
+            code: 'NOT_IN_ROOM',
+            message: 'Player is not in any room',
           });
           return;
         }
 
-        io.to(found.room.roomCode).emit(SERVER_EVENTS.ROOM_VIEW, toRoomView(found.room));
-        emitGameState(io, roomManager, found.room.roomCode);
+        await enqueueRoomAction(found.room.roomCode, () => {
+          const result = roomManager.callBluff(
+            found.room.roomCode,
+            found.player.playerId,
+            data.playSeq
+          );
+
+          if (!result.ok) {
+            socket.emit(SERVER_EVENTS.ERROR, {
+              code: result.code,
+              message: result.message,
+            });
+            return;
+          }
+
+          io.to(found.room.roomCode).emit(
+            SERVER_EVENTS.CHALLENGE_RESULT,
+            result.result
+          );
+          io.to(found.room.roomCode).emit(
+            SERVER_EVENTS.ROOM_VIEW,
+            toRoomView(found.room)
+          );
+          emitGameState(io, roomManager, found.room.roomCode);
+        });
+      })
+    );
+
+    socket.on(
+      CLIENT_EVENTS.PLAY_AGAIN,
+      handle(socket, PlayAgainRequestSchema, async () => {
+        const found =
+          roomManager.findBySocketId(socket.id) ||
+          (typeof socket.handshake.auth?.sessionToken === 'string'
+            ? roomManager.findBySessionToken(socket.handshake.auth.sessionToken)
+            : null);
+
+        if (!found) {
+          socket.emit(SERVER_EVENTS.ERROR, {
+            code: 'NOT_IN_ROOM',
+            message: 'Player is not in any room',
+          });
+          return;
+        }
+
+        await enqueueRoomAction(found.room.roomCode, () => {
+          const result = roomManager.playAgain(
+            found.room.roomCode,
+            found.player.playerId
+          );
+
+          if (!result.ok) {
+            socket.emit(SERVER_EVENTS.ERROR, {
+              code: result.code,
+              message: result.message,
+            });
+            return;
+          }
+
+          io.to(found.room.roomCode).emit(
+            SERVER_EVENTS.ROOM_VIEW,
+            toRoomView(found.room)
+          );
+        });
       })
     );
 

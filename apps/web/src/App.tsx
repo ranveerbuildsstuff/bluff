@@ -5,9 +5,11 @@ import {
   SessionIssued,
   RoomView,
   PublicGameState,
+  ChallengeResult,
   SessionIssuedSchema,
   RoomViewSchema,
   PublicGameStateSchema,
+  ChallengeResultSchema,
   SettingsClampedSchema,
   ErrorEventSchema,
 } from '@bluff/shared';
@@ -29,6 +31,7 @@ export function App() {
   const [session, setSession] = useState<SessionIssued | null>(() => getSession());
   const [roomView, setRoomView] = useState<RoomView | null>(null);
   const [gameState, setGameState] = useState<PublicGameState | null>(null);
+  const [challengeResult, setChallengeResult] = useState<ChallengeResult | null>(null);
   const [savedName, setSavedName] = useState<string>(() => getSavedName());
   const [isSocketConnected, setIsSocketConnected] = useState<boolean>(() =>
     Boolean(socket.connected)
@@ -76,6 +79,10 @@ export function App() {
       const parsed = RoomViewSchema.safeParse(data);
       if (!parsed.success) return;
       setRoomView(parsed.data);
+      if (parsed.data.status === 'LOBBY') {
+        setGameState(null);
+        setChallengeResult(null);
+      }
     };
 
     const onGameState = (data: unknown) => {
@@ -83,6 +90,12 @@ export function App() {
       const parsed = PublicGameStateSchema.safeParse(data);
       if (!parsed.success) return;
       setGameState(parsed.data);
+    };
+
+    const onChallengeResult = (data: unknown) => {
+      const parsed = ChallengeResultSchema.safeParse(data);
+      if (!parsed.success) return;
+      setChallengeResult(parsed.data);
     };
 
     const onSettingsClamped = (data: unknown) => {
@@ -107,6 +120,7 @@ export function App() {
         setSession(null);
         setRoomView(null);
         setGameState(null);
+        setChallengeResult(null);
         updateSocketAuth('');
       }
     };
@@ -115,6 +129,7 @@ export function App() {
     socket.on(SERVER_EVENTS.SESSION_ISSUED, onSessionIssued);
     socket.on(SERVER_EVENTS.ROOM_VIEW, onRoomView);
     socket.on(SERVER_EVENTS.GAME_STATE, onGameState);
+    socket.on(SERVER_EVENTS.CHALLENGE_RESULT, onChallengeResult);
     socket.on(SERVER_EVENTS.SETTINGS_CLAMPED, onSettingsClamped);
     socket.on(SERVER_EVENTS.ERROR, onError);
 
@@ -132,6 +147,7 @@ export function App() {
       socket.off(SERVER_EVENTS.SESSION_ISSUED, onSessionIssued);
       socket.off(SERVER_EVENTS.ROOM_VIEW, onRoomView);
       socket.off(SERVER_EVENTS.GAME_STATE, onGameState);
+      socket.off(SERVER_EVENTS.CHALLENGE_RESULT, onChallengeResult);
       socket.off(SERVER_EVENTS.SETTINGS_CLAMPED, onSettingsClamped);
       socket.off(SERVER_EVENTS.ERROR, onError);
       cleanupReconnect();
@@ -164,11 +180,20 @@ export function App() {
     setSession(null);
     setRoomView(null);
     setGameState(null);
+    setChallengeResult(null);
     updateSocketAuth('');
   };
 
   const handlePlayTurn = (selectedCardIds: string[]) => {
     socket.emit(CLIENT_EVENTS.PLAY_TURN, { selectedCardIds });
+  };
+
+  const handleCallBluff = (playSeq: number) => {
+    socket.emit(CLIENT_EVENTS.CALL_BLUFF, { playSeq });
+  };
+
+  const handlePlayAgain = () => {
+    socket.emit(CLIENT_EVENTS.PLAY_AGAIN, {});
   };
 
   const isCurrentlyConnected = isSocketConnected || Boolean(socket.connected);
@@ -178,13 +203,18 @@ export function App() {
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       {roomView && session ? (
-        roomView.status === 'PLAYING' && gameState ? (
+        roomView.status !== 'LOBBY' && gameState ? (
           <GameScreen
             gameState={gameState}
             currentPlayerId={session.playerId}
             isSocketConnected={isCurrentlyConnected}
+            isHost={roomView.hostId === session.playerId}
+            challengeResult={challengeResult}
+            onDismissChallengeResult={() => setChallengeResult(null)}
             onLeaveRoom={handleLeaveRoom}
             onPlayTurn={handlePlayTurn}
+            onCallBluff={handleCallBluff}
+            onPlayAgain={handlePlayAgain}
           />
         ) : (
           <LobbyScreen

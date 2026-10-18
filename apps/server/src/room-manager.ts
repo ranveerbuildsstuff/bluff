@@ -13,10 +13,12 @@ import {
 import {
   startGame as engineStartGame,
   playTurn as enginePlayTurn,
+  callBluff as engineCallBluff,
   PlayTurnResult,
+  CallBluffResult,
 } from './engine/game.js';
 import { generateUniqueRoomCode } from './engine/room-code.js';
-import { GameState, maxCardsPerPlayer } from '@bluff/shared';
+import { GameState, maxCardsPerPlayer, FINAL_CALL_MS } from '@bluff/shared';
 
 export const ROOM_CLEANUP_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 export const LOBBY_DISCONNECT_TIMEOUT_MS = 60 * 1000; // 60 seconds
@@ -37,6 +39,7 @@ export class RoomManager {
   private rooms = new Map<string, RoomState>();
   private cleanupTimers = new Map<string, unknown>();
   private playerDisconnectTimers = new Map<string, unknown>();
+  private finalCallTimers = new Map<string, unknown>();
   private onRoomChange?: RoomChangeCallback;
 
   constructor(
@@ -210,11 +213,100 @@ export class RoomManager {
 
     const result = enginePlayTurn(room.gameState, playerId, cardIds);
     if (result.ok) {
+      if (result.state.status === 'FINAL_CALL') {
+        const deadline = Date.now() + FINAL_CALL_MS;
+        result.state.finalCallDeadline = deadline;
+        this.scheduleFinalCallTimer(code, FINAL_CALL_MS);
+      } else {
+        this.cancelFinalCallTimer(code);
+      }
       room.gameState = result.state;
       room.status = result.state.status;
     }
 
     return result;
+  }
+
+  public callBluff(
+    roomCode: string,
+    challengerId: string,
+    playSeq: number
+  ):
+    | CallBluffResult
+    | {
+        ok: false;
+        code: 'ROOM_NOT_FOUND' | 'NO_ACTIVE_GAME';
+        message: string;
+      } {
+    const code = roomCode.toUpperCase();
+    const room = this.rooms.get(code);
+    if (!room) {
+      return {
+        ok: false,
+        code: 'ROOM_NOT_FOUND',
+        message: `Room "${code}" does not exist`,
+      };
+    }
+
+    if (!room.gameState) {
+      return {
+        ok: false,
+        code: 'NO_ACTIVE_GAME',
+        message: 'No active game in this room',
+      };
+    }
+
+    const result = engineCallBluff(room.gameState, challengerId, playSeq);
+    if (result.ok) {
+      this.cancelFinalCallTimer(code);
+      room.gameState = result.state;
+      room.status = result.state.status;
+    }
+
+    return result;
+  }
+
+  public playAgain(
+    roomCode: string,
+    requesterPlayerId: string
+  ):
+    | { ok: true; room: RoomState }
+    | {
+        ok: false;
+        code: 'ROOM_NOT_FOUND' | 'NOT_HOST' | 'GAME_NOT_OVER';
+        message: string;
+      } {
+    const code = roomCode.toUpperCase();
+    const room = this.rooms.get(code);
+    if (!room) {
+      return {
+        ok: false,
+        code: 'ROOM_NOT_FOUND',
+        message: `Room "${code}" does not exist`,
+      };
+    }
+
+    if (room.hostId !== requesterPlayerId) {
+      return {
+        ok: false,
+        code: 'NOT_HOST',
+        message: 'Only the host can start a new game',
+      };
+    }
+
+    if (room.status !== 'GAME_OVER') {
+      return {
+        ok: false,
+        code: 'GAME_NOT_OVER',
+        message: 'Cannot play again until the game is over',
+      };
+    }
+
+    this.cancelFinalCallTimer(code);
+    room.status = 'LOBBY';
+    room.gameState = null;
+
+    return { ok: true, room };
   }
 
   public leaveRoom(
@@ -359,6 +451,40 @@ export class RoomManager {
     }
   }
 
+  public scheduleFinalCallTimer(
+    roomCode: string,
+    timeoutMs: number = FINAL_CALL_MS
+  ): void {
+    this.cancelFinalCallTimer(roomCode);
+    const timer = this.scheduler.setTimeout(() => {
+      this.handleFinalCallTimeout(roomCode);
+    }, timeoutMs);
+    this.finalCallTimers.set(roomCode.toUpperCase(), timer);
+  }
+
+  public cancelFinalCallTimer(roomCode: string): void {
+    const code = roomCode.toUpperCase();
+    const existing = this.finalCallTimers.get(code);
+    if (existing) {
+      this.scheduler.clearTimeout(existing);
+      this.finalCallTimers.delete(code);
+    }
+  }
+
+  public handleFinalCallTimeout(roomCode: string): void {
+    const code = roomCode.toUpperCase();
+    this.finalCallTimers.delete(code);
+    const room = this.rooms.get(code);
+    if (room && room.gameState && room.gameState.status === 'FINAL_CALL') {
+      room.gameState.status = 'GAME_OVER';
+      room.status = 'GAME_OVER';
+      room.gameState.finalCallDeadline = null;
+      if (this.onRoomChange) {
+        this.onRoomChange(room, code);
+      }
+    }
+  }
+
   public deleteRoom(roomCode: string): void {
     const code = roomCode.toUpperCase();
     const room = this.rooms.get(code);
@@ -367,6 +493,7 @@ export class RoomManager {
         this.cancelPlayerDisconnectTimer(player.playerId);
       }
     }
+    this.cancelFinalCallTimer(code);
     this.cancelCleanupTimer(code);
     this.rooms.delete(code);
   }
@@ -378,8 +505,12 @@ export class RoomManager {
     for (const timer of this.playerDisconnectTimers.values()) {
       this.scheduler.clearTimeout(timer);
     }
+    for (const timer of this.finalCallTimers.values()) {
+      this.scheduler.clearTimeout(timer);
+    }
     this.cleanupTimers.clear();
     this.playerDisconnectTimers.clear();
+    this.finalCallTimers.clear();
     this.rooms.clear();
   }
 }
