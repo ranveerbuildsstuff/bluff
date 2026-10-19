@@ -8,6 +8,8 @@
 - [x] Slice 5: Reconnection, hardening & proof
 - [x] Slice 6: UI polish
 - [x] Mini: Join by Link & small text fixes
+- [x] Slice 7: Optional accounts & stats (server)
+- [ ] Slice 8: Accounts & leaderboard UI
 
 ## Decisions & deviations
 ### Slice 1: Scaffold, identity & lobby
@@ -288,6 +290,76 @@
 - **Event names**: No server event changes.
 - **Deviations**: None.
 
-
-
-
+### Slice 7: Optional accounts & stats (server)
+- **What was built**:
+  - `firebase-admin` added as server runtime dependency in `apps/server/package.json`.
+  - Config & graceful degradation:
+    - Reads `FIREBASE_SERVICE_ACCOUNT_JSON` environment variable. If missing or invalid, initializes `NoopStatsStore` / `NoopTokenVerifier` without crashing and logs `"Accounts: disabled"`.
+    - If valid, converts literal `\n` to real newlines in `private_key`, initializes `FirestoreStatsStore` / `FirebaseTokenVerifier`, and logs `"Accounts: enabled"`.
+    - Zero secrets or parse errors are ever printed or logged.
+    - Added `.env.example` with variable names only.
+  - Interfaces in `apps/server/src/stats/types.ts`:
+    - `TokenVerifier` (`verify(idToken: string): Promise<{ uid: string; name?: string }>`): verifies Firebase ID token.
+    - `StatsStore`: `ensureUser`, `recordGame`, `getStats`, `getLeaderboard`, `setDisplayName`, `deleteUser`.
+    - Implementations: `FirestoreStatsStore` / `FirebaseTokenVerifier` (production), `InMemoryStatsStore` / `FakeTokenVerifier` (tests), `NoopStatsStore` / `NoopTokenVerifier` (disabled).
+    - `LeaderboardCache`: 120-second in-memory TTL cache to safeguard Firestore free quota.
+  - Shared schemas in `packages/shared/src/index.ts`:
+    - Socket events: `IdentifyRequestSchema` (`{ idToken }`), `SignOutRequestSchema` (`{}`), `IdentifiedEventSchema` (`{ displayName, stats: { gamesPlayed, wins } }`), `StatsUpdatedEventSchema` (`{ gamesPlayed, wins, counted: boolean, reason?: 'NOT_RANKED' | 'ABANDONED' }`).
+    - HTTP schemas: `UpdateNameBodySchema` (`{ name }`), `LeaderboardEntrySchema` (`{ rank, displayName, wins, gamesPlayed, winRate }`), `MeResponseSchema` (`{ displayName, gamesPlayed, wins, winRate }`).
+    - Added `gameId: z.string().uuid().optional()` to `GameStateSchema` and `PublicGameStateSchema`, populated via `crypto.randomUUID()` in `startGame()`.
+  - Pure game engine untouched:
+    - Stats tracking is triggered strictly from `RoomManager` upon game completion, keeping `apps/server/src/engine/` purely functional.
+    - Added `finalResult: { gameId, winnerId, playerIds, ranked }` to `RoomState` persisting until room deletion.
+  - Socket `identify` & `sign_out`:
+    - Validated through `handle()`.
+    - Verifies ID token with `TokenVerifier`; on success, records `uid` on the player's server-side record (survives reconnects), lazily ensures user document, and replies `identified`.
+    - Enforces uniqueness: rejects linking a UID if it is already linked to another player in the same room (`AUTH_FAILED`).
+    - `sign_out` clears `player.uid`.
+    - Security: `idToken` and `uid` are never broadcast, logged, or exposed in `RoomView`, `GameState`, or any player's payload.
+  - Game recording & ranking rules:
+    - Ranked game condition: ends in `GAME_OVER` with a winner (`endedReason !== 'PLAYER_ABANDONED'`), and player count was at least `MIN_RANKED_PLAYERS` (default 3, configurable via env var).
+    - Ranked game adds +1 `gamesPlayed` to all signed-in players and +1 `wins` to the winner.
+    - Idempotency: Uses transaction with `FieldValue.increment` and marker document `users/{uid}/games/{gameId}`, preventing double counting on retries or late claims.
+    - Emits `stats_updated` to each signed-in player. Unranked or abandoned games emit `stats_updated` with `counted: false` and the specific reason without writing to database.
+    - Late claim: if a guest signs in via `identify` after `GAME_OVER` has been reached, any completed ranked game they played in is immediately credited once.
+  - Display name rules:
+    - Defaults to Google profile name if provided, otherwise the in-game nickname.
+    - Never defaults to any part of an email.
+    - Stored per user: `displayName`, `gamesPlayed`, `wins`, `createdAt`, `updatedAt`. Zero email, photo, or personal data stored.
+  - HTTP REST API (`/api` router on Express):
+    - `express.json({ limit: '2kb' })`, per-IP rate limiting, and strict Zod validation on all queries/bodies.
+    - `GET /api/me`: Authenticated route returning user stats; creates user document lazily if not found.
+    - `PATCH /api/me`: Authenticated route updating `displayName` with strict player name validation.
+    - `DELETE /api/me`: Authenticated route deleting `users/{uid}` and its `games` subcollection.
+    - `GET /api/leaderboard`: Public route with optional `limit` query param (default 20, max 50). Ordered by `wins desc`, `winRate desc`, `displayName asc`. Cached in memory for 120s. Exposes only `rank`, `displayName`, `wins`, `gamesPlayed`, `winRate`.
+    - When accounts are disabled: `GET /api/leaderboard` returns `[]`; other `/api/*` endpoints return 503 (`ACCOUNTS_DISABLED`).
+  - Security & rules:
+    - `firestore.rules`: added to repo root, completely denying all direct client reads and writes.
+    - `README.md`: added "Accounts & leaderboard" section explaining server & client env vars and security architecture.
+  - Tests:
+    - Added `apps/server/src/__tests__/slice7-accounts-and-stats.test.ts` (30 tests) testing config degradation, store operations, ranking rules, late claims, auth rejection, duplicate linking rejection, HTTP endpoints, 120s caching, disabled mode, socket events, and unlinked 3-player full game.
+    - Updated `apps/server/src/__tests__/security-audit.test.ts` to assert all HTTP routes use strict Zod validation, startup log compliance, and zero UID / idToken / secret leaks.
+- **Key file paths**:
+  - [packages/shared/src/index.ts](file:///e:/ranveer/BLUFF/packages/shared/src/index.ts)
+  - [apps/server/src/stats/types.ts](file:///e:/ranveer/BLUFF/apps/server/src/stats/types.ts)
+  - [apps/server/src/stats/config.ts](file:///e:/ranveer/BLUFF/apps/server/src/stats/config.ts)
+  - [apps/server/src/stats/noop.ts](file:///e:/ranveer/BLUFF/apps/server/src/stats/noop.ts)
+  - [apps/server/src/stats/in-memory.ts](file:///e:/ranveer/BLUFF/apps/server/src/stats/in-memory.ts)
+  - [apps/server/src/stats/firestore.ts](file:///e:/ranveer/BLUFF/apps/server/src/stats/firestore.ts)
+  - [apps/server/src/stats/cache.ts](file:///e:/ranveer/BLUFF/apps/server/src/stats/cache.ts)
+  - [apps/server/src/http/index.ts](file:///e:/ranveer/BLUFF/apps/server/src/http/index.ts)
+  - [apps/server/src/engine/game.ts](file:///e:/ranveer/BLUFF/apps/server/src/engine/game.ts)
+  - [apps/server/src/engine/room.ts](file:///e:/ranveer/BLUFF/apps/server/src/engine/room.ts)
+  - [apps/server/src/room-manager.ts](file:///e:/ranveer/BLUFF/apps/server/src/room-manager.ts)
+  - [apps/server/src/socket/index.ts](file:///e:/ranveer/BLUFF/apps/server/src/socket/index.ts)
+  - [apps/server/src/index.ts](file:///e:/ranveer/BLUFF/apps/server/src/index.ts)
+  - [firestore.rules](file:///e:/ranveer/BLUFF/firestore.rules)
+  - [.env.example](file:///e:/ranveer/BLUFF/.env.example)
+  - [README.md](file:///e:/ranveer/BLUFF/README.md)
+  - [PROGRESS.md](file:///e:/ranveer/BLUFF/PROGRESS.md)
+  - [apps/server/src/__tests__/slice7-accounts-and-stats.test.ts](file:///e:/ranveer/BLUFF/apps/server/src/__tests__/slice7-accounts-and-stats.test.ts)
+  - [apps/server/src/__tests__/security-audit.test.ts](file:///e:/ranveer/BLUFF/apps/server/src/__tests__/security-audit.test.ts)
+- **Event names**:
+  - Client -> Server: `identify`, `sign_out`
+  - Server -> Client: `identified`, `stats_updated`
+- **Deviations**: None.

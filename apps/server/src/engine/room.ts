@@ -14,6 +14,15 @@ export interface PlayerRecord {
   name: string;
   connected: boolean;
   socketId: string | null;
+  uid?: string;
+}
+
+export interface FinalGameResult {
+  gameId: string;
+  winnerId?: string;
+  playerIds: string[];
+  ranked: boolean;
+  endedReason?: string;
 }
 
 export interface RoomState {
@@ -26,6 +35,7 @@ export interface RoomState {
   };
   cardsPerPlayerSource: 'auto' | 'host';
   gameState?: GameState | null;
+  finalResult?: FinalGameResult | null;
 }
 
 export type JoinRoomResult =

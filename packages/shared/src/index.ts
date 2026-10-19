@@ -74,6 +74,7 @@ export type RoomStatus = z.infer<typeof RoomStatusSchema>;
 
 export const GameStateSchema = z
   .object({
+    gameId: z.string().uuid().optional(),
     roomCode: z.string(),
     hostId: z.string().uuid(),
     status: RoomStatusSchema,
@@ -291,6 +292,74 @@ export const PlayerReconnectedSchema = z
   .strict();
 export type PlayerReconnected = z.infer<typeof PlayerReconnectedSchema>;
 
+// Slice 7: Accounts & Stats Schemas
+export const IdentifyRequestSchema = z
+  .object({
+    idToken: z.string().min(1),
+  })
+  .strict();
+export type IdentifyRequest = z.infer<typeof IdentifyRequestSchema>;
+
+export const SignOutRequestSchema = z.object({}).strict();
+export type SignOutRequest = z.infer<typeof SignOutRequestSchema>;
+
+export const UserStatsViewSchema = z
+  .object({
+    gamesPlayed: z.number().int().nonnegative(),
+    wins: z.number().int().nonnegative(),
+  })
+  .strict();
+export type UserStatsView = z.infer<typeof UserStatsViewSchema>;
+
+export const IdentifiedEventSchema = z
+  .object({
+    displayName: z.string().min(1).max(16),
+    stats: UserStatsViewSchema,
+  })
+  .strict();
+export type IdentifiedEvent = z.infer<typeof IdentifiedEventSchema>;
+
+export const StatsUpdatedReasonSchema = z.enum(['NOT_RANKED', 'ABANDONED']);
+export type StatsUpdatedReason = z.infer<typeof StatsUpdatedReasonSchema>;
+
+export const StatsUpdatedEventSchema = z
+  .object({
+    gamesPlayed: z.number().int().nonnegative(),
+    wins: z.number().int().nonnegative(),
+    counted: z.boolean(),
+    reason: StatsUpdatedReasonSchema.optional(),
+  })
+  .strict();
+export type StatsUpdatedEvent = z.infer<typeof StatsUpdatedEventSchema>;
+
+export const UpdateNameBodySchema = z
+  .object({
+    name: PlayerNameSchema,
+  })
+  .strict();
+export type UpdateNameBody = z.infer<typeof UpdateNameBodySchema>;
+
+export const LeaderboardEntrySchema = z
+  .object({
+    rank: z.number().int().positive(),
+    displayName: z.string().min(1).max(16),
+    wins: z.number().int().nonnegative(),
+    gamesPlayed: z.number().int().nonnegative(),
+    winRate: z.number(),
+  })
+  .strict();
+export type LeaderboardEntry = z.infer<typeof LeaderboardEntrySchema>;
+
+export const MeResponseSchema = z
+  .object({
+    displayName: z.string().min(1).max(16),
+    gamesPlayed: z.number().int().nonnegative(),
+    wins: z.number().int().nonnegative(),
+    winRate: z.number(),
+  })
+  .strict();
+export type MeResponse = z.infer<typeof MeResponseSchema>;
+
 export const FINAL_CALL_MS = 10 * 1000;
 export const REJOIN_GRACE_MS = 60 * 1000;
 export const ABANDONED_CLEANUP_MS = 2 * 60 * 1000;
@@ -306,6 +375,8 @@ export const CLIENT_EVENTS = {
   PLAY_TURN: 'play_turn',
   CALL_BLUFF: 'call_bluff',
   PLAY_AGAIN: 'play_again',
+  IDENTIFY: 'identify',
+  SIGN_OUT: 'sign_out',
 } as const;
 
 export const SERVER_EVENTS = {
@@ -317,6 +388,8 @@ export const SERVER_EVENTS = {
   CHALLENGE_RESULT: 'challenge_result',
   PLAYER_DISCONNECTED: 'player_disconnected',
   PLAYER_RECONNECTED: 'player_reconnected',
+  IDENTIFIED: 'identified',
+  STATS_UPDATED: 'stats_updated',
 } as const;
 
 // Helper calculations

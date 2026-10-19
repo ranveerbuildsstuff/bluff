@@ -27,7 +27,14 @@ import {
   FINAL_CALL_MS,
   REJOIN_GRACE_MS,
   ABANDONED_CLEANUP_MS,
+  StatsUpdatedEvent,
 } from '@bluff/shared';
+import {
+  StatsStore,
+  NoopStatsStore,
+  VerifiedUser,
+  getMinRankedPlayers,
+} from './stats/index.js';
 
 export const ROOM_CLEANUP_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 export const LOBBY_DISCONNECT_TIMEOUT_MS = 60 * 1000; // 60 seconds
@@ -44,6 +51,11 @@ export const defaultScheduler: Scheduler = {
 
 export type RoomChangeCallback = (room: RoomState | null, roomCode: string) => void;
 export type ActionQueueFn = <T>(roomCode: string, action: () => Promise<T> | T) => Promise<T>;
+export type StatsUpdatedCallback = (
+  playerId: string,
+  socketId: string | null,
+  event: StatsUpdatedEvent
+) => void;
 
 export class RoomManager {
   private rooms = new Map<string, RoomState>();
@@ -53,12 +65,33 @@ export class RoomManager {
   private finalCallTimers = new Map<string, unknown>();
   private onRoomChange?: RoomChangeCallback;
   private actionQueue?: ActionQueueFn;
+  private onStatsUpdated?: StatsUpdatedCallback;
 
   constructor(
     private scheduler: Scheduler = defaultScheduler,
-    onRoomChange?: RoomChangeCallback
+    onRoomChange?: RoomChangeCallback,
+    private statsStore: StatsStore = new NoopStatsStore(),
+    private minRankedPlayers: number = getMinRankedPlayers()
   ) {
     this.onRoomChange = onRoomChange;
+  }
+
+  public setOnStatsUpdated(callback: StatsUpdatedCallback): void {
+    this.onStatsUpdated = callback;
+  }
+
+  public setStatsStore(store: StatsStore): void {
+    this.statsStore = store;
+  }
+
+  public setMinRankedPlayers(count: number): void {
+    this.minRankedPlayers = count;
+  }
+
+  private notifyStatsUpdated(player: PlayerRecord, event: StatsUpdatedEvent): void {
+    if (this.onStatsUpdated) {
+      this.onStatsUpdated(player.playerId, player.socketId, event);
+    }
   }
 
   public setActionQueue(queue: ActionQueueFn): void {
@@ -243,17 +276,18 @@ export class RoomManager {
     return result;
   }
 
-  public callBluff(
+  public async callBluff(
     roomCode: string,
     challengerId: string,
     playSeq: number
-  ):
+  ): Promise<
     | CallBluffResult
     | {
         ok: false;
         code: 'ROOM_NOT_FOUND' | 'NO_ACTIVE_GAME';
         message: string;
-      } {
+      }
+  > {
     const code = roomCode.toUpperCase();
     const room = this.rooms.get(code);
     if (!room) {
@@ -277,6 +311,9 @@ export class RoomManager {
       this.cancelFinalCallTimer(code);
       room.gameState = result.state;
       room.status = result.state.status;
+      if (result.state.status === 'GAME_OVER') {
+        await this.handleGameOver(room);
+      }
     }
 
     return result;
@@ -452,7 +489,7 @@ export class RoomManager {
     this.playerDisconnectTimers.set(playerId, timer);
   }
 
-  public handleGraceTimeout(roomCode: string, playerId: string): void {
+  public async handleGraceTimeout(roomCode: string, playerId: string): Promise<void> {
     const code = roomCode.toUpperCase();
     this.playerDisconnectTimers.delete(playerId);
     this.playerGraceDeadlines.delete(playerId);
@@ -478,6 +515,8 @@ export class RoomManager {
       if (this.onRoomChange) {
         this.onRoomChange(room, code);
       }
+
+      await this.handleGameOver(room);
     }
   }
 
@@ -611,7 +650,7 @@ export class RoomManager {
     }
   }
 
-  public handleFinalCallTimeout(roomCode: string): void {
+  public async handleFinalCallTimeout(roomCode: string): Promise<void> {
     const code = roomCode.toUpperCase();
     this.finalCallTimers.delete(code);
     const room = this.rooms.get(code);
@@ -622,6 +661,195 @@ export class RoomManager {
       if (this.onRoomChange) {
         this.onRoomChange(room, code);
       }
+      await this.handleGameOver(room);
+    }
+  }
+
+  public async handleGameOver(room: RoomState): Promise<void> {
+    if (!room.gameState) {
+      return;
+    }
+
+    const gameState = room.gameState;
+    if (typeof gameState.gameId !== 'string') {
+      return;
+    }
+    const gameId = gameState.gameId;
+    const isAbandoned =
+      gameState.endedReason === 'PLAYER_ABANDONED' || !gameState.winnerId;
+    const playerCount = gameState.turnOrder.length;
+    const ranked =
+      !isAbandoned &&
+      !!gameState.winnerId &&
+      playerCount >= this.minRankedPlayers;
+
+    const finalResult = {
+      gameId,
+      winnerId: gameState.winnerId,
+      playerIds: [...gameState.turnOrder],
+      ranked,
+      endedReason: gameState.endedReason ?? undefined,
+    };
+    room.finalResult = finalResult;
+
+    for (const player of room.players) {
+      if (!player.uid || !finalResult.playerIds.includes(player.playerId)) {
+        continue;
+      }
+
+      if (ranked) {
+        const won = gameState.winnerId === player.playerId;
+        try {
+          const rec = await this.statsStore.recordGame(
+            player.uid,
+            finalResult.gameId,
+            won
+          );
+          this.notifyStatsUpdated(player, {
+            gamesPlayed: rec.gamesPlayed,
+            wins: rec.wins,
+            counted: true,
+          });
+        } catch {
+          // Ignore
+        }
+      } else {
+        const reason =
+          gameState.endedReason === 'PLAYER_ABANDONED'
+            ? 'ABANDONED'
+            : 'NOT_RANKED';
+        try {
+          const curr = await this.statsStore.getStats(player.uid);
+          this.notifyStatsUpdated(player, {
+            gamesPlayed: curr?.gamesPlayed ?? 0,
+            wins: curr?.wins ?? 0,
+            counted: false,
+            reason,
+          });
+        } catch {
+          this.notifyStatsUpdated(player, {
+            gamesPlayed: 0,
+            wins: 0,
+            counted: false,
+            reason,
+          });
+        }
+      }
+    }
+  }
+
+  public async identifyPlayer(
+    roomCode: string,
+    playerId: string,
+    verified: VerifiedUser
+  ): Promise<
+    | {
+        ok: true;
+        displayName: string;
+        stats: { gamesPlayed: number; wins: number };
+      }
+    | { ok: false; code: 'AUTH_FAILED'; message: string }
+  > {
+    const code = roomCode.toUpperCase();
+    const room = this.rooms.get(code);
+    if (!room) {
+      return {
+        ok: false,
+        code: 'AUTH_FAILED',
+        message: 'Authentication failed',
+      };
+    }
+
+    const player = room.players.find((p) => p.playerId === playerId);
+    if (!player) {
+      return {
+        ok: false,
+        code: 'AUTH_FAILED',
+        message: 'Authentication failed',
+      };
+    }
+
+    // A uid may be linked to only ONE player per room (reject a second link)
+    const existingOther = room.players.find(
+      (p) => p.uid === verified.uid && p.playerId !== playerId
+    );
+    if (existingOther) {
+      return {
+        ok: false,
+        code: 'AUTH_FAILED',
+        message: 'Account is already linked to another player in this room',
+      };
+    }
+
+    player.uid = verified.uid;
+    const initialDisplayName = verified.name || player.name;
+
+    try {
+      const user = await this.statsStore.ensureUser(
+        verified.uid,
+        initialDisplayName
+      );
+
+      // Late claim: if a guest signs in (identify) while the room is in GAME_OVER
+      // and they were a player in the finished game, credit that one game (once, via marker)
+      const finalResult = room.finalResult;
+      if (
+        room.status === 'GAME_OVER' &&
+        finalResult &&
+        finalResult.playerIds.includes(player.playerId)
+      ) {
+        if (finalResult.ranked) {
+          const won = finalResult.winnerId === player.playerId;
+          const rec = await this.statsStore.recordGame(
+            verified.uid,
+            finalResult.gameId,
+            won
+          );
+          user.gamesPlayed = rec.gamesPlayed;
+          user.wins = rec.wins;
+          this.notifyStatsUpdated(player, {
+            gamesPlayed: rec.gamesPlayed,
+            wins: rec.wins,
+            counted: true,
+          });
+        } else {
+          const reason =
+            finalResult.endedReason === 'PLAYER_ABANDONED'
+              ? 'ABANDONED'
+              : 'NOT_RANKED';
+          this.notifyStatsUpdated(player, {
+            gamesPlayed: user.gamesPlayed,
+            wins: user.wins,
+            counted: false,
+            reason,
+          });
+        }
+      }
+
+      return {
+        ok: true,
+        displayName: user.displayName,
+        stats: {
+          gamesPlayed: user.gamesPlayed,
+          wins: user.wins,
+        },
+      };
+    } catch {
+      return {
+        ok: false,
+        code: 'AUTH_FAILED',
+        message: 'Authentication failed',
+      };
+    }
+  }
+
+  public signOutPlayer(roomCode: string, playerId: string): void {
+    const code = roomCode.toUpperCase();
+    const room = this.rooms.get(code);
+    if (!room) return;
+    const player = room.players.find((p) => p.playerId === playerId);
+    if (player) {
+      player.uid = undefined;
     }
   }
 

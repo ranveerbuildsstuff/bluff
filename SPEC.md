@@ -13,7 +13,7 @@
 6. Reconnection: a dropped player can rejoin; the game pauses for up to 60 seconds.
 
 ## Non-Goals (do NOT build)
-User accounts, persistent leaderboards, custom avatars, chat, bots, matchmaking with strangers, general animations. The only allowed animation is the card flip when a challenge is revealed, plus basic CSS transitions.
+Custom avatars, chat, bots, matchmaking with strangers, general animations. The only allowed animation is the card flip when a challenge is revealed, plus basic CSS transitions. (Note: Optional accounts and leaderboard added in Slices 7 & 8).
 
 ## Rules (single source of truth)
 - Players: 2–8. One 52-card deck only. Max cardsPerPlayer = min(15, floor(52 / playerCount)). Anything higher is rejected.
@@ -24,6 +24,12 @@ User accounts, persistent leaderboards, custom avatars, chat, bots, matchmaking 
 - Challenge: any player except the one who just played may call bluff, on the most recent play only, and only before the next play. All cards match the declared rank (truth) -> challenger picks up the whole pile. Any mismatch (bluff) -> the player who played picks it up. The pile empties. The challenge winner takes the next turn.
 - Win: first player to empty their hand. Final call: when a play empties a hand, others get 10 seconds to challenge. No challenge -> that player wins. Challenged and truthful -> they win. Challenged and bluff -> they pick up the pile and play continues.
 - Hidden information: a client only ever receives its own hand. Other hands and the pile are counts only. Card faces are revealed only in the `challenge_result` event, and only for the challenged play.
+- Optional accounts & stats rules:
+  - Login is OPTIONAL. Guests play exactly as today and are never blocked or interrupted during a game.
+  - Stats are written ONLY by the server through the Firebase Admin SDK. Firestore rules deny all client access.
+  - A game is "ranked" when it ends in GAME_OVER with a winner (not PLAYER_ABANDONED) and had at least MIN_RANKED_PLAYERS players (env var, default 3). A ranked game adds +1 gamesPlayed to every signed-in player in it and +1 wins to the winner. Guests are never recorded.
+  - Stored per user: displayName, gamesPlayed, wins, createdAt, updatedAt. NO email, NO photo, NO other personal data.
+  - The public leaderboard exposes only displayName, wins, gamesPlayed, winRate. Never uid or email.
 
 ## Roadmap (build ONE slice per ticket; never build ahead, but never make choices that block later slices)
 1. Scaffold, identity (playerId + sessionToken) & lobby
@@ -32,5 +38,7 @@ User accounts, persistent leaderboards, custom avatars, chat, bots, matchmaking 
 4. Challenge engine, final call, win, play again
 5. Reconnection (PAUSED state), hardening, integration tests, production build
 6. UI polish
+7. Optional accounts & stats (server)
+8. Accounts & leaderboard UI
 
 Note: `GameState.status` includes LOBBY | PLAYING | FINAL_CALL | PAUSED | GAME_OVER from Slice 2 on, so later slices extend instead of rewrite.

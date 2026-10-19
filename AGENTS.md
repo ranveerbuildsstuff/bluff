@@ -15,6 +15,7 @@ No new dependencies without asking me.
 8. Identity: `playerId` is public (uuid). `sessionToken` is secret, sent only to its owner, never broadcast, never logged.
 9. Never log or emit another player's cards.
 10. Every slice ships Vitest tests for the logic it adds.
+11. Never commit secrets (.env files, service-account JSON). Never log tokens or credentials. Clients never read or write Firestore directly. Every HTTP route validates its input with a strict Zod schema.
 
 ## Process for every slice
 1. Re-read SPEC.md, AGENTS.md and PROGRESS.md.

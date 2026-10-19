@@ -11,11 +11,14 @@ import {
   PlayTurnRequestSchema,
   CallBluffRequestSchema,
   PlayAgainRequestSchema,
+  IdentifyRequestSchema,
+  SignOutRequestSchema,
 } from '@bluff/shared';
 import { handle, clearRateLimit } from './handle.js';
 import { RoomManager } from '../room-manager.js';
 import { toRoomView } from '../engine/room.js';
 import { toPublicState } from '../engine/game.js';
+import { TokenVerifier, NoopTokenVerifier } from '../stats/index.js';
 
 export function emitGameState(
   io: SocketIOServer,
@@ -58,8 +61,18 @@ export function enqueueRoomAction<T>(roomCode: string, action: () => Promise<T> 
   return next as Promise<T>;
 }
 
-export function setupSocketServer(io: SocketIOServer, roomManager: RoomManager): void {
+export function setupSocketServer(
+  io: SocketIOServer,
+  roomManager: RoomManager,
+  tokenVerifier: TokenVerifier = new NoopTokenVerifier()
+): void {
   roomManager.setActionQueue(enqueueRoomAction);
+
+  roomManager.setOnStatsUpdated((_playerId, socketId, event) => {
+    if (socketId) {
+      io.to(socketId).emit(SERVER_EVENTS.STATS_UPDATED, event);
+    }
+  });
 
   roomManager.setOnRoomChange((room) => {
     if (room) {
@@ -285,8 +298,8 @@ export function setupSocketServer(io: SocketIOServer, roomManager: RoomManager):
           return;
         }
 
-        await enqueueRoomAction(found.room.roomCode, () => {
-          const result = roomManager.callBluff(
+        await enqueueRoomAction(found.room.roomCode, async () => {
+          const result = await roomManager.callBluff(
             found.room.roomCode,
             found.player.playerId,
             data.playSeq
@@ -407,6 +420,70 @@ export function setupSocketServer(io: SocketIOServer, roomManager: RoomManager):
             }
           }
         });
+      })
+    );
+
+    socket.on(
+      CLIENT_EVENTS.IDENTIFY,
+      handle(socket, IdentifyRequestSchema, async (data) => {
+        const found =
+          roomManager.findBySocketId(socket.id) ||
+          (typeof socket.handshake.auth?.sessionToken === 'string'
+            ? roomManager.findBySessionToken(socket.handshake.auth.sessionToken)
+            : null);
+
+        if (!found) {
+          socket.emit(SERVER_EVENTS.ERROR, {
+            code: 'AUTH_FAILED',
+            message: 'Authentication failed',
+          });
+          return;
+        }
+
+        let verified;
+        try {
+          verified = await tokenVerifier.verify(data.idToken);
+        } catch {
+          socket.emit(SERVER_EVENTS.ERROR, {
+            code: 'AUTH_FAILED',
+            message: 'Authentication failed',
+          });
+          return;
+        }
+
+        const result = await roomManager.identifyPlayer(
+          found.room.roomCode,
+          found.player.playerId,
+          verified
+        );
+
+        if (!result.ok) {
+          socket.emit(SERVER_EVENTS.ERROR, {
+            code: result.code,
+            message: result.message,
+          });
+          return;
+        }
+
+        socket.emit(SERVER_EVENTS.IDENTIFIED, {
+          displayName: result.displayName,
+          stats: result.stats,
+        });
+      })
+    );
+
+    socket.on(
+      CLIENT_EVENTS.SIGN_OUT,
+      handle(socket, SignOutRequestSchema, async () => {
+        const found =
+          roomManager.findBySocketId(socket.id) ||
+          (typeof socket.handshake.auth?.sessionToken === 'string'
+            ? roomManager.findBySessionToken(socket.handshake.auth.sessionToken)
+            : null);
+
+        if (found) {
+          roomManager.signOutPlayer(found.room.roomCode, found.player.playerId);
+        }
       })
     );
 

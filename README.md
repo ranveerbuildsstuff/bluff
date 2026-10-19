@@ -104,3 +104,26 @@ npm run test:coverage
 ```
 
 - Target coverage for pure game logic (`apps/server/src/engine/`): **>= 90%** across statements, branches, functions, and lines.
+
+---
+
+## Accounts & Leaderboard
+
+Accounts and stats are optional. Guests can play without signing in, and gameplay is never interrupted or blocked.
+
+### Server Environment Variables
+- `FIREBASE_SERVICE_ACCOUNT_JSON`: **Secret**. The full Firebase service account private key JSON provided as a string. Used by the server to initialize the Firebase Admin SDK. If unset or invalid, the server runs with accounts disabled gracefully (logging `"Accounts: disabled"`) using an in-memory no-op store.
+- `MIN_RANKED_PLAYERS`: Minimum number of players required for a finished game to be counted as ranked (defaults to `3`). Games with fewer players or ended by abandonment are not ranked.
+
+### Client Environment Variables (Slice 8)
+- `VITE_FIREBASE_API_KEY`: Firebase web API key.
+- `VITE_FIREBASE_AUTH_DOMAIN`: Firebase auth domain (e.g., `project-id.firebaseapp.com`).
+- `VITE_FIREBASE_PROJECT_ID`: Firebase project ID.
+- `VITE_FIREBASE_APP_ID`: Firebase client app ID.
+
+### Security & Privacy Rules
+- **Direct Client Access Denied**: Clients never read or write Firestore directly. `firestore.rules` denies all client access (`allow read, write: if false;`).
+- **Server Authority**: Only the server records stats via the Firebase Admin SDK using idempotent transactions.
+- **Privacy**: Stored user data contains only `displayName`, `gamesPlayed`, `wins`, `createdAt`, and `updatedAt`. Emails, photos, and personal profile information are never stored, logged, or exposed.
+- **Leaderboard**: The public leaderboard endpoint (`GET /api/leaderboard`) exposes only `rank`, `displayName`, `wins`, `gamesPlayed`, and `winRate`. Neither `uid` nor email is ever exposed.
+

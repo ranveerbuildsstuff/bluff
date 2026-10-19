@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
   Card,
   ChallengeResult,
@@ -93,6 +94,7 @@ export function startGame(
   }));
 
   return {
+    gameId: randomUUID(),
     roomCode: room.roomCode,
     hostId: room.hostId,
     status: 'PLAYING',
