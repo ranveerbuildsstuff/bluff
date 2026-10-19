@@ -6,6 +6,7 @@ import {
   Suit,
   rankLabel,
   rankWithArticle,
+  pluralize,
   cardCountLabel,
   cardsWord,
   ChallengeResult,
@@ -344,7 +345,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               Opponents
             </span>
             <span className="text-[11px] font-semibold text-slate-500">
-              {opponents.length} players
+              {pluralize(opponents.length, 'player')}
             </span>
           </div>
 
@@ -513,21 +514,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               style={{ touchAction: 'manipulation' }}
             >
               {selectedCount > 0 ? (
-                selectedCount === 1 ? (
-                  <span>
-                    Play 1 card as{' '}
-                    <span className="font-extrabold">
-                      {rankWithArticle(gameState.requiredRank)}
-                    </span>
+                <span>
+                  Play {pluralize(selectedCount, 'card')} as{' '}
+                  <span className="font-extrabold">
+                    {selectedCount === 1
+                      ? rankWithArticle(gameState.requiredRank)
+                      : rankLabel(gameState.requiredRank, selectedCount)}
                   </span>
-                ) : (
-                  <span>
-                    Play {selectedCount} cards as{' '}
-                    <span className="font-extrabold">
-                      {rankLabel(gameState.requiredRank, selectedCount)}
-                    </span>
-                  </span>
-                )
+                </span>
               ) : (
                 <span>
                   {isMyTurn

@@ -407,8 +407,70 @@ export function rankWithArticle(rank: Rank): string {
   }
 }
 
+export function pluralize(
+  count: number,
+  singular: string,
+  plural: string = `${singular}s`
+): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+export function isValidRoomCode(code: unknown): boolean {
+  if (typeof code !== 'string') return false;
+  return /^[A-HJ-NP-Z2-9]{6}$/i.test(code.trim());
+}
+
+export function normalizeRoomCode(code: unknown): string | null {
+  if (typeof code !== 'string') return null;
+  const trimmed = code.trim();
+  if (/^[A-HJ-NP-Z2-9]{6}$/i.test(trimmed)) {
+    return trimmed.toUpperCase();
+  }
+  return null;
+}
+
+export function buildRoomLink(origin: string, roomCode: string): string {
+  const code = roomCode.trim().toUpperCase();
+  return `${origin}/?room=${code}`;
+}
+
+export interface RoomPrefillResult {
+  prefilledCode: string | null;
+  cleanedUrl: string | null;
+}
+
+export function resolveRoomPrefill(
+  search: string,
+  pathname: string = '/',
+  hash: string = ''
+): RoomPrefillResult {
+  if (!search) {
+    return { prefilledCode: null, cleanedUrl: null };
+  }
+  const cleanSearch = search.startsWith('?') ? search.slice(1) : search;
+  const params = new URLSearchParams(cleanSearch);
+  const rawRoom = params.get('room');
+  if (!rawRoom) {
+    return { prefilledCode: null, cleanedUrl: null };
+  }
+  const validated = normalizeRoomCode(rawRoom);
+  if (!validated) {
+    return { prefilledCode: null, cleanedUrl: null };
+  }
+
+  params.delete('room');
+  const remaining = params.toString();
+  const newSearch = remaining ? `?${remaining}` : '';
+  const cleanedUrl = `${pathname}${newSearch}${hash}`;
+
+  return {
+    prefilledCode: validated,
+    cleanedUrl,
+  };
+}
+
 export function cardCountLabel(count: number): string {
-  return count === 1 ? '1 card' : `${count} cards`;
+  return pluralize(count, 'card');
 }
 
 export function cardsWord(count: number): string {

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { PlayerNameSchema, RoomCodeSchema } from '@bluff/shared';
+import React, { useState, useEffect, useRef } from 'react';
+import { PlayerNameSchema, RoomCodeSchema, resolveRoomPrefill } from '@bluff/shared';
 
 interface LandingScreenProps {
   initialName: string;
@@ -14,8 +14,34 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
   onJoinRoom,
   onErrorToast,
 }) => {
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const [playerName, setPlayerName] = useState(initialName);
-  const [roomCode, setRoomCode] = useState('');
+
+  const initialPrefill = typeof window !== 'undefined'
+    ? resolveRoomPrefill(window.location.search, window.location.pathname, window.location.hash)
+    : { prefilledCode: null, cleanedUrl: null };
+
+  const [roomCode, setRoomCode] = useState(initialPrefill.prefilledCode ?? '');
+  const [prefilledRoom, setPrefilledRoom] = useState<string | null>(initialPrefill.prefilledCode);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const result = resolveRoomPrefill(
+        window.location.search,
+        window.location.pathname,
+        window.location.hash
+      );
+      if (result.prefilledCode && result.cleanedUrl) {
+        setRoomCode(result.prefilledCode);
+        setPrefilledRoom(result.prefilledCode);
+        nameInputRef.current?.focus();
+        window.history.replaceState({}, '', result.cleanedUrl);
+      }
+    } catch {
+      // Silently ignore any URL parsing error
+    }
+  }, []);
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,6 +95,7 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
           </label>
           <input
             id="player-name"
+            ref={nameInputRef}
             type="text"
             value={playerName}
             onChange={(e) => setPlayerName(e.target.value)}
@@ -120,6 +147,11 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
               className="w-full px-4 rounded-xl bg-slate-900/90 border border-slate-600/80 text-white placeholder-slate-500 text-center font-mono font-bold tracking-widest text-lg uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               style={{ minHeight: '48px' }}
             />
+            {prefilledRoom && roomCode === prefilledRoom && (
+              <p className="text-xs text-indigo-400 mt-2 text-center font-medium">
+                You&apos;re joining room {prefilledRoom}
+              </p>
+            )}
           </div>
 
           <button

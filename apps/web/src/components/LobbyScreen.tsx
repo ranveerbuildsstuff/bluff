@@ -3,6 +3,8 @@ import {
   RoomView,
   maxCardsPerPlayer,
   recommendedCardsPerPlayer,
+  pluralize,
+  buildRoomLink,
 } from '@bluff/shared';
 
 interface LobbyScreenProps {
@@ -32,14 +34,16 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   const recommended = recommendedCardsPerPlayer(playerCount);
   const currentCards = roomView.settings.cardsPerPlayer;
 
+  const shareUrl = buildRoomLink(window.location.origin, roomView.roomCode);
+  const shareText = `Join my Bluff game! Room code: ${roomView.roomCode}`;
+
   const handleShare = async () => {
-    const textToShare = `Join my Bluff game! Code: ${roomView.roomCode}`;
     if (navigator.share) {
       try {
         await navigator.share({
           title: 'Bluff Card Game',
-          text: textToShare,
-          url: window.location.href,
+          text: shareText,
+          url: shareUrl,
         });
         return;
       } catch (err) {
@@ -51,8 +55,22 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
     if (navigator.clipboard) {
       try {
+        await navigator.clipboard.writeText(shareUrl);
+        onInfoToast('Link copied');
+        return;
+      } catch {
+        onErrorToast('Failed to copy to clipboard');
+      }
+    } else {
+      onInfoToast(`Join link: ${shareUrl}`);
+    }
+  };
+
+  const handleCopyCode = async () => {
+    if (navigator.clipboard) {
+      try {
         await navigator.clipboard.writeText(roomView.roomCode);
-        onInfoToast(`Room code ${roomView.roomCode} copied to clipboard!`);
+        onInfoToast('Code copied');
         return;
       } catch {
         onErrorToast('Failed to copy to clipboard');
@@ -99,22 +117,41 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             {roomView.roomCode}
           </div>
 
-          <button
-            type="button"
-            onClick={handleShare}
-            className="mt-3 w-full px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold text-sm shadow-md shadow-indigo-600/20 min-h-[44px] flex items-center justify-center gap-2 transition-colors"
-            style={{ touchAction: 'manipulation' }}
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
-              />
-            </svg>
-            <span>Share Room Code</span>
-          </button>
+          <div className="flex flex-col gap-2 mt-3">
+            <button
+              type="button"
+              onClick={handleShare}
+              className="w-full px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold text-sm shadow-md shadow-indigo-600/20 min-h-[44px] flex items-center justify-center gap-2 transition-colors"
+              style={{ touchAction: 'manipulation' }}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                />
+              </svg>
+              <span>Share Room Code</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCopyCode}
+              className="w-full px-3 py-2 rounded-xl bg-slate-700/70 hover:bg-slate-700 active:bg-slate-800 text-slate-300 font-medium text-xs border border-slate-600/60 min-h-[44px] flex items-center justify-center gap-1.5 transition-colors"
+              style={{ touchAction: 'manipulation' }}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                />
+              </svg>
+              <span>Copy code</span>
+            </button>
+          </div>
         </div>
 
         {/* Host Settings / Game Setup */}
@@ -181,7 +218,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     {currentCards}
                   </span>
                   <span className="text-[10px] text-slate-400 font-medium">
-                    cards each
+                    {currentCards === 1 ? 'card each' : 'cards each'}
                   </span>
                 </div>
 
@@ -205,7 +242,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               </span>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-base font-bold text-indigo-300">
-                  {currentCards} cards each
+                  {pluralize(currentCards, 'card')} each
                 </span>
                 {currentCards === recommended && (
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">

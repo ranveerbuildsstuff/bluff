@@ -40,6 +40,13 @@ npm start
 
 The server listens on `0.0.0.0` and `process.env.PORT` (defaults to `3001`). When `apps/web/dist` exists, Express serves the static production bundle and handles SPA fallback routing while Socket.io handles real-time game events on the same port.
 
+### Join by Link Verification
+Verify that room link joins work on the single-process production build:
+1. Run `npm run build && npm start`.
+2. Open `http://localhost:3001/?room=ABC234` in a browser (or over Wi-Fi with your IP).
+3. The landing page opens with room code `ABC234` prefilled in uppercase, focus on the name field, and a small line stating "You're joining room ABC234".
+4. The address bar automatically cleans the `?room=...` query parameter via `history.replaceState` so page refreshes do not re-apply it. Invalid room codes are silently ignored.
+
 ---
 
 ## Playing on Phones Over the Same Wi-Fi

@@ -7,6 +7,7 @@
 - [x] Slice 4: Challenge engine, final call & win
 - [x] Slice 5: Reconnection, hardening & proof
 - [x] Slice 6: UI polish
+- [x] Mini: Join by Link & small text fixes
 
 ## Decisions & deviations
 ### Slice 1: Scaffold, identity & lobby
@@ -245,6 +246,44 @@
   - [apps/web/src/components/GameScreen.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/GameScreen.tsx)
   - [apps/web/src/__tests__/slice6-ui-polish.test.tsx](file:///e:/ranveer/BLUFF/apps/web/src/__tests__/slice6-ui-polish.test.tsx)
   - [SPEC.md](file:///e:/ranveer/BLUFF/SPEC.md)
+  - [PROGRESS.md](file:///e:/ranveer/BLUFF/PROGRESS.md)
+- **Event names**: No server event changes.
+- **Deviations**: None.
+
+### Mini: Join by Link & small text fixes
+- **What was built/fixed**:
+  - **Shared helpers (`@bluff/shared`)**:
+    - `pluralize(count, singular, plural?)`: formats numbers with singular or plural ("1 player" / "2 players", "1 card" / "5 cards").
+    - `cardCountLabel` refactored to use `pluralize(count, 'card')`.
+    - `isValidRoomCode(code)` and `normalizeRoomCode(code)` validating 6-character codes from alphabet (`ABCDEFGHJKLMNPQRSTUVWXYZ23456789`, case-insensitive).
+    - `buildRoomLink(origin, roomCode)` constructing `${origin}/?room=${CODE}`.
+    - `resolveRoomPrefill(search, pathname?, hash?)` parsing URL query parameter, extracting valid uppercase code, and returning cleaned URL path.
+  - **Landing screen prefill**:
+    - Reads `?room=CODE` query parameter on load; if valid, prefills the room-code field in uppercase, focuses the nickname field, and shows `"You're joining room CODE"`.
+    - Automatically cleans the `room` query parameter from the address bar via `history.replaceState` so page refreshes do not re-apply it.
+    - Invalid room codes are silently ignored.
+    - Session-restore behavior is untouched: players with an active session still rejoin automatically.
+  - **Lobby sharing**:
+    - "Share Room Code" shares the full join link `${window.location.origin}/?room=CODE` with text `"Join my Bluff game! Room code: CODE"` using `navigator.share` when available.
+    - Falls back to copying link to clipboard with toast `"Link copied"`.
+    - Added separate small "Copy code" button for the code alone with toast `"Code copied"`.
+  - **Text & grammar fixes**:
+    - Fixed Opponents header to show `pluralize(opponents.length, 'player')` ("1 player" / "2 players") instead of hardcoded `"1 players"`.
+    - Replaced hard-coded card counts with `pluralize` in `LobbyScreen.tsx` and `GameScreen.tsx`.
+  - **Production build check**:
+    - Verified single-process serving of `/?room=ABC123` on `npm run build && npm start`.
+    - Documented join-by-link verification steps in `README.md`.
+  - **Tests**:
+    - Unit tests in `packages/shared/src/__tests__/room-link-and-pluralize.test.ts` covering `pluralize`, `isValidRoomCode` (valid, lowercase, wrong length, wrong characters, non-strings), `buildRoomLink`, and `resolveRoomPrefill`.
+    - Component and UI tests in `apps/web/src/__tests__/mini-join-by-link.test.tsx` covering LandingScreen prefill, uppercase normalization, invalid code silent ignore, LobbyScreen Share & Copy buttons, and GameScreen opponent pluralization.
+- **Key file paths**:
+  - [packages/shared/src/index.ts](file:///e:/ranveer/BLUFF/packages/shared/src/index.ts)
+  - [packages/shared/src/__tests__/room-link-and-pluralize.test.ts](file:///e:/ranveer/BLUFF/packages/shared/src/__tests__/room-link-and-pluralize.test.ts)
+  - [apps/web/src/components/LandingScreen.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/LandingScreen.tsx)
+  - [apps/web/src/components/LobbyScreen.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/LobbyScreen.tsx)
+  - [apps/web/src/components/GameScreen.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/GameScreen.tsx)
+  - [apps/web/src/__tests__/mini-join-by-link.test.tsx](file:///e:/ranveer/BLUFF/apps/web/src/__tests__/mini-join-by-link.test.tsx)
+  - [README.md](file:///e:/ranveer/BLUFF/README.md)
   - [PROGRESS.md](file:///e:/ranveer/BLUFF/PROGRESS.md)
 - **Event names**: No server event changes.
 - **Deviations**: None.
