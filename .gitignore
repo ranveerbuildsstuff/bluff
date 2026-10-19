@@ -1,5 +1,10 @@
 node_modules
 dist
 coverage
-.DS_Store
+.env
+.env.*
+!.env.example
 *.log
+serviceAccount*.json
+*-firebase-adminsdk-*.json
+.DS_Store
