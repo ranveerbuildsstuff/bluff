@@ -7,6 +7,8 @@ import {
   buildRoomLink,
 } from '@bluff/shared';
 
+import { AccountButton } from './AccountButton';
+
 interface LobbyScreenProps {
   roomView: RoomView;
   currentPlayerId: string;
@@ -16,6 +18,10 @@ interface LobbyScreenProps {
   onStartGame: () => void;
   onInfoToast: (message: string) => void;
   onErrorToast: (message: string) => void;
+  isAccountsEnabled?: boolean;
+  isSignedIn?: boolean;
+  accountDisplayName?: string | null;
+  onOpenAccount?: () => void;
 }
 
 export const LobbyScreen: React.FC<LobbyScreenProps> = ({
@@ -27,6 +33,10 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   onStartGame,
   onInfoToast,
   onErrorToast,
+  isAccountsEnabled = false,
+  isSignedIn = false,
+  accountDisplayName = null,
+  onOpenAccount,
 }) => {
   const isHost = roomView.hostId === currentPlayerId;
   const playerCount = roomView.players.length;
@@ -34,7 +44,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   const recommended = recommendedCardsPerPlayer(playerCount);
   const currentCards = roomView.settings.cardsPerPlayer;
 
-  const shareUrl = buildRoomLink(window.location.origin, roomView.roomCode);
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+  const shareUrl = buildRoomLink(origin, roomView.roomCode);
   const shareText = `Join my Bluff game! Room code: ${roomView.roomCode}`;
 
   const handleShare = async () => {
@@ -86,22 +97,32 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     <div className="w-full max-w-[360px] mx-auto px-4 py-6 flex flex-col justify-between min-h-[640px]">
       {/* Top Bar: Connection & Leave */}
       <div>
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${
-                isSocketConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'
-              }`}
-            />
-            <span className="text-xs font-medium text-slate-400">
-              {isSocketConnected ? 'Connected' : 'Reconnecting...'}
-            </span>
+        <div className="flex items-center justify-between mb-4 gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span
+                className={`w-2.5 h-2.5 rounded-full ${
+                  isSocketConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'
+                }`}
+              />
+              <span className="text-xs font-medium text-slate-400">
+                {isSocketConnected ? 'Connected' : 'Reconnecting...'}
+              </span>
+            </div>
+
+            {isAccountsEnabled && (
+              <AccountButton
+                isSignedIn={Boolean(isSignedIn)}
+                displayName={accountDisplayName}
+                onClick={onOpenAccount || (() => {})}
+              />
+            )}
           </div>
 
           <button
             type="button"
             onClick={onLeaveRoom}
-            className="text-xs font-semibold text-rose-400 hover:text-rose-300 active:text-rose-500 px-3 py-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 min-h-[44px] flex items-center justify-center transition-colors"
+            className="shrink-0 text-xs font-semibold text-rose-400 hover:text-rose-300 active:text-rose-500 px-3 py-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 min-h-[44px] flex items-center justify-center transition-colors"
             style={{ touchAction: 'manipulation' }}
           >
             Leave Lobby

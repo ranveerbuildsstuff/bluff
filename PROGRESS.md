@@ -9,7 +9,7 @@
 - [x] Slice 6: UI polish
 - [x] Mini: Join by Link & small text fixes
 - [x] Slice 7: Optional accounts & stats (server)
-- [ ] Slice 8: Accounts & leaderboard UI
+- [x] Slice 8: Accounts & leaderboard UI
 
 ## Decisions & deviations
 ### Slice 1: Scaffold, identity & lobby
@@ -359,6 +359,67 @@
   - [PROGRESS.md](file:///e:/ranveer/BLUFF/PROGRESS.md)
   - [apps/server/src/__tests__/slice7-accounts-and-stats.test.ts](file:///e:/ranveer/BLUFF/apps/server/src/__tests__/slice7-accounts-and-stats.test.ts)
   - [apps/server/src/__tests__/security-audit.test.ts](file:///e:/ranveer/BLUFF/apps/server/src/__tests__/security-audit.test.ts)
+- **Event names**:
+  - Client -> Server: `identify`, `sign_out`
+  - Server -> Client: `identified`, `stats_updated`
+- **Deviations**: None.
+
+### Slice 8: Accounts & leaderboard UI
+- **What was built**:
+  - `firebase` web SDK installed in `apps/web`.
+  - Configured auth in `apps/web/src/firebase.ts`:
+    - Checks `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, and `VITE_FIREBASE_APP_ID`.
+    - If any is missing, `isAccountsConfigured` is `false`, auth is gracefully null, and all accounts/leaderboard features are completely hidden without breaking any existing behavior.
+    - Friendly error message translation: mapped Google popup errors to `"Google sign-in didn't open. Allow pop-ups, or open this link in Chrome or Safari, or use email and password instead."`, and mapped Firebase error codes to friendly strings without leaking raw codes.
+  - HTTP client in `apps/web/src/api.ts`:
+    - Calls `GET /api/me`, `PATCH /api/me`, and `DELETE /api/me` with `Authorization: Bearer <fresh ID token>` and strict Zod validation against `@bluff/shared` schemas.
+    - Calls `GET /api/leaderboard?limit=20` and validates against `LeaderboardEntrySchema`.
+  - Account Button (`AccountButton.tsx`):
+    - Guest: renders `"Sign in"` with >= 44px touch target.
+    - Signed in: renders avatar circle with the first letter of display name.
+    - Integrated on LandingScreen (top-right next to Leaderboard button) and LobbyScreen (top bar beside connection indicator without overlapping Leave Lobby).
+  - Sign-in Sheet (`SignInSheet.tsx`):
+    - Mobile-first sheet with >= 44px targets.
+    - "Continue with Google" via `signInWithPopup`.
+    - Email + Password with Sign in / Create account toggle (>= 8 characters password validation for creation).
+    - "Forgot password" link triggering `sendPasswordResetEmail`.
+    - "Not now" button to dismiss.
+  - Account Sheet (`AccountSheet.tsx`):
+    - Editable display name with `PlayerNameSchema` (1..16 chars).
+    - Games played, wins, and win rate formatted with `pluralize`.
+    - "Sign out" button.
+    - "Delete my stats" button with confirmation step and `DELETE /api/me`.
+  - Leaderboard Sheet (`LeaderboardSheet.tsx`):
+    - Full-screen sheet fetching `/api/leaderboard?limit=20`.
+    - Loading spinner and empty state `"No ranked games yet. Be the first!"`.
+    - Renders rank, name, wins, games, and win %.
+    - Highlights signed-in player's own row where `displayName`, `wins`, and `gamesPlayed` match `GET /api/me`. Read-only for guests.
+  - Game-over Screen accounts integration (`GameScreen.tsx`):
+    - Guests: non-blocking card under the result `"Save your wins and join the leaderboard. Sign in to keep your stats."` with `[Sign in]` and `[Not now]`. Shown at most once per browser session via `sessionStorage`, never shown during a game.
+    - Signed in: shows `"Saved! Wins: X · Games: Y"` from `stats_updated`.
+    - Unranked / abandoned games: shows note `"This game didn't count toward the leaderboard"` with reason (`needs at least 3 players` or `the game was abandoned`).
+    - Late claim: signing in on the game-over screen triggers `identify`, credits the completed game, and displays the saved line.
+  - Real-time Socket Linking (`App.tsx`):
+    - Automatically sends `identify` with a fresh ID token after `SessionIssued`, when socket connects/reconnects while signed in, or upon sign-in.
+    - Emits `sign_out` on user sign-out.
+    - Listens to `identified` and `stats_updated` to maintain live UI state.
+  - Tests (`apps/web/src/__tests__/slice8-accounts-and-leaderboard.test.tsx`):
+    - 26 tests covering missing env degradation, guest prompt single-session display, game-over saved/uncounted text, leaderboard rendering/empty state/highlighted own row, friendly error mapping, API endpoints, and socket identify lifecycle.
+- **Key file paths**:
+  - [apps/web/package.json](file:///e:/ranveer/BLUFF/apps/web/package.json)
+  - [apps/web/src/vite-env.d.ts](file:///e:/ranveer/BLUFF/apps/web/src/vite-env.d.ts)
+  - [apps/web/src/firebase.ts](file:///e:/ranveer/BLUFF/apps/web/src/firebase.ts)
+  - [apps/web/src/api.ts](file:///e:/ranveer/BLUFF/apps/web/src/api.ts)
+  - [apps/web/src/components/AccountButton.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/AccountButton.tsx)
+  - [apps/web/src/components/SignInSheet.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/SignInSheet.tsx)
+  - [apps/web/src/components/AccountSheet.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/AccountSheet.tsx)
+  - [apps/web/src/components/LeaderboardSheet.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/LeaderboardSheet.tsx)
+  - [apps/web/src/components/LandingScreen.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/LandingScreen.tsx)
+  - [apps/web/src/components/LobbyScreen.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/LobbyScreen.tsx)
+  - [apps/web/src/components/GameScreen.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/GameScreen.tsx)
+  - [apps/web/src/App.tsx](file:///e:/ranveer/BLUFF/apps/web/src/App.tsx)
+  - [apps/web/src/__tests__/slice8-accounts-and-leaderboard.test.tsx](file:///e:/ranveer/BLUFF/apps/web/src/__tests__/slice8-accounts-and-leaderboard.test.tsx)
+  - [PROGRESS.md](file:///e:/ranveer/BLUFF/PROGRESS.md)
 - **Event names**:
   - Client -> Server: `identify`, `sign_out`
   - Server -> Client: `identified`, `stats_updated`

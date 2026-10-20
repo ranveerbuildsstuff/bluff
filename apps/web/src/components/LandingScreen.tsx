@@ -1,11 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { PlayerNameSchema, RoomCodeSchema, resolveRoomPrefill } from '@bluff/shared';
+import { AccountButton } from './AccountButton';
 
 interface LandingScreenProps {
   initialName: string;
   onCreateRoom: (playerName: string) => void;
   onJoinRoom: (roomCode: string, playerName: string) => void;
   onErrorToast: (message: string) => void;
+  isAccountsEnabled?: boolean;
+  isSignedIn?: boolean;
+  accountDisplayName?: string | null;
+  onOpenAccount?: () => void;
+  onOpenLeaderboard?: () => void;
 }
 
 export const LandingScreen: React.FC<LandingScreenProps> = ({
@@ -13,6 +19,11 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
   onCreateRoom,
   onJoinRoom,
   onErrorToast,
+  isAccountsEnabled = false,
+  isSignedIn = false,
+  accountDisplayName = null,
+  onOpenAccount,
+  onOpenLeaderboard,
 }) => {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [playerName, setPlayerName] = useState(initialName);
@@ -73,6 +84,27 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
 
   return (
     <div className="w-full max-w-[360px] mx-auto px-4 py-8 flex flex-col justify-center min-h-[640px]">
+      {/* Optional Top Bar: Leaderboard & Account */}
+      {isAccountsEnabled && (
+        <div className="flex items-center justify-between mb-4">
+          <button
+            type="button"
+            onClick={onOpenLeaderboard}
+            className="min-h-[44px] px-3.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 active:bg-slate-800 border border-slate-700 text-xs font-semibold text-amber-300 flex items-center gap-1.5 shadow-sm transition-colors"
+            style={{ touchAction: 'manipulation' }}
+          >
+            <span>🏆</span>
+            <span>Leaderboard</span>
+          </button>
+
+          <AccountButton
+            isSignedIn={Boolean(isSignedIn)}
+            displayName={accountDisplayName}
+            onClick={onOpenAccount || (() => {})}
+          />
+        </div>
+      )}
+
       {/* Brand Header */}
       <div className="text-center mb-8">
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 mb-3 shadow-lg shadow-indigo-500/10">

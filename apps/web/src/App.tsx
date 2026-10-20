@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import type { User } from 'firebase/auth';
 import {
   CLIENT_EVENTS,
   SERVER_EVENTS,
@@ -6,6 +7,7 @@ import {
   RoomView,
   PublicGameState,
   ChallengeResult,
+  StatsUpdatedEvent,
   SessionIssuedSchema,
   RoomViewSchema,
   PublicGameStateSchema,
@@ -14,6 +16,8 @@ import {
   ErrorEventSchema,
   PlayerDisconnectedSchema,
   PlayerReconnectedSchema,
+  IdentifiedEventSchema,
+  StatsUpdatedEventSchema,
 } from '@bluff/shared';
 import { socket, updateSocketAuth, setupVisibilityReconnect } from './socket';
 import { setupConnectionTracker } from './connection-tracker';
@@ -24,10 +28,19 @@ import {
   getSavedName,
   saveSavedName,
 } from './storage';
+import {
+  auth,
+  isAccountsConfigured,
+  subscribeToAuthState,
+  signOutUser,
+} from './firebase';
 import { LandingScreen } from './components/LandingScreen';
 import { LobbyScreen } from './components/LobbyScreen';
 import { GameScreen } from './components/GameScreen';
 import { ToastContainer, ToastItem } from './components/ToastContainer';
+import { SignInSheet } from './components/SignInSheet';
+import { AccountSheet } from './components/AccountSheet';
+import { LeaderboardSheet } from './components/LeaderboardSheet';
 
 export function App() {
   const [session, setSession] = useState<SessionIssued | null>(() => getSession());
@@ -39,6 +52,14 @@ export function App() {
     Boolean(socket.connected)
   );
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  // Accounts & Stats State
+  const [user, setUser] = useState<User | null>(null);
+  const [accountDisplayName, setAccountDisplayName] = useState<string | null>(null);
+  const [isSignInOpen, setIsSignInOpen] = useState(false);
+  const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
+  const [latestStatsUpdated, setLatestStatsUpdated] = useState<StatsUpdatedEvent | null>(null);
 
   const addToast = useCallback((message: string, type: 'error' | 'info' = 'error') => {
     const id = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -53,17 +74,53 @@ export function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  // Listen to Firebase Auth state
+  useEffect(() => {
+    if (!isAccountsConfigured) return;
+
+    const unsubscribe = subscribeToAuthState(async (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        setAccountDisplayName(currentUser.displayName || null);
+        const currentSession = getSession();
+        if (socket.connected && currentSession) {
+          try {
+            const token = await currentUser.getIdToken();
+            socket.emit(CLIENT_EVENTS.IDENTIFY, { idToken: token });
+          } catch {
+            // Silently ignore token failure
+          }
+        }
+      } else {
+        setAccountDisplayName(null);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
+
   // Setup connection tracker and socket listeners
   useEffect(() => {
     const cleanupConnectionTracker = setupConnectionTracker(socket, (connected) => {
       setIsSocketConnected(connected);
     });
 
+    const sendIdentifyIfSignedIn = async () => {
+      if (!isAccountsConfigured || !auth?.currentUser) return;
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        socket.emit(CLIENT_EVENTS.IDENTIFY, { idToken });
+      } catch {
+        // Silently ignore token fetch error
+      }
+    };
+
     const onConnect = () => {
       setIsSocketConnected(true);
       const currentSession = getSession();
       if (currentSession) {
         socket.emit(CLIENT_EVENTS.GET_ROOM_VIEW, {});
+        sendIdentifyIfSignedIn();
       }
     };
 
@@ -74,6 +131,7 @@ export function App() {
       saveSession(parsed.data);
       setSession(parsed.data);
       updateSocketAuth(parsed.data.sessionToken);
+      sendIdentifyIfSignedIn();
     };
 
     const onRoomView = (data: unknown) => {
@@ -84,6 +142,7 @@ export function App() {
       if (parsed.data.status === 'LOBBY') {
         setGameState(null);
         setChallengeResult(null);
+        setLatestStatsUpdated(null);
       }
     };
 
@@ -121,6 +180,18 @@ export function App() {
       addToast(`${parsed.data.name} reconnected.`, 'info');
     };
 
+    const onIdentified = (data: unknown) => {
+      const parsed = IdentifiedEventSchema.safeParse(data);
+      if (!parsed.success) return;
+      setAccountDisplayName(parsed.data.displayName);
+    };
+
+    const onStatsUpdated = (data: unknown) => {
+      const parsed = StatsUpdatedEventSchema.safeParse(data);
+      if (!parsed.success) return;
+      setLatestStatsUpdated(parsed.data);
+    };
+
     const onError = (data: unknown) => {
       const parsed = ErrorEventSchema.safeParse(data);
       const message = parsed.success ? parsed.data.message : 'An error occurred';
@@ -135,6 +206,7 @@ export function App() {
         setRoomView(null);
         setGameState(null);
         setChallengeResult(null);
+        setLatestStatsUpdated(null);
         updateSocketAuth('');
       }
     };
@@ -147,14 +219,20 @@ export function App() {
     socket.on(SERVER_EVENTS.SETTINGS_CLAMPED, onSettingsClamped);
     socket.on(SERVER_EVENTS.PLAYER_DISCONNECTED, onPlayerDisconnected);
     socket.on(SERVER_EVENTS.PLAYER_RECONNECTED, onPlayerReconnected);
+    socket.on(SERVER_EVENTS.IDENTIFIED, onIdentified);
+    socket.on(SERVER_EVENTS.STATS_UPDATED, onStatsUpdated);
     socket.on(SERVER_EVENTS.ERROR, onError);
 
     if (socket.connected && session) {
       socket.emit(CLIENT_EVENTS.GET_ROOM_VIEW, {});
+      sendIdentifyIfSignedIn();
     }
 
     const cleanupReconnect = setupVisibilityReconnect(() => {
       setIsSocketConnected(Boolean(socket.connected));
+      if (socket.connected && getSession()) {
+        sendIdentifyIfSignedIn();
+      }
     });
 
     return () => {
@@ -167,6 +245,8 @@ export function App() {
       socket.off(SERVER_EVENTS.SETTINGS_CLAMPED, onSettingsClamped);
       socket.off(SERVER_EVENTS.PLAYER_DISCONNECTED, onPlayerDisconnected);
       socket.off(SERVER_EVENTS.PLAYER_RECONNECTED, onPlayerReconnected);
+      socket.off(SERVER_EVENTS.IDENTIFIED, onIdentified);
+      socket.off(SERVER_EVENTS.STATS_UPDATED, onStatsUpdated);
       socket.off(SERVER_EVENTS.ERROR, onError);
       cleanupReconnect();
     };
@@ -199,6 +279,7 @@ export function App() {
     setRoomView(null);
     setGameState(null);
     setChallengeResult(null);
+    setLatestStatsUpdated(null);
     updateSocketAuth('');
   };
 
@@ -212,6 +293,35 @@ export function App() {
 
   const handlePlayAgain = () => {
     socket.emit(CLIENT_EVENTS.PLAY_AGAIN, {});
+  };
+
+  const handleOpenAccount = () => {
+    if (user) {
+      setIsAccountOpen(true);
+    } else {
+      setIsSignInOpen(true);
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOutUser();
+    setUser(null);
+    setAccountDisplayName(null);
+    setLatestStatsUpdated(null);
+    if (session) {
+      socket.emit(CLIENT_EVENTS.SIGN_OUT, {});
+    }
+  };
+
+  const handleSignInSuccess = async () => {
+    if (auth?.currentUser && session) {
+      try {
+        const token = await auth.currentUser.getIdToken();
+        socket.emit(CLIENT_EVENTS.IDENTIFY, { idToken: token });
+      } catch {
+        // Silently ignore
+      }
+    }
   };
 
   const isCurrentlyConnected = isSocketConnected || Boolean(socket.connected);
@@ -233,6 +343,10 @@ export function App() {
             onPlayTurn={handlePlayTurn}
             onCallBluff={handleCallBluff}
             onPlayAgain={handlePlayAgain}
+            isAccountsEnabled={isAccountsConfigured}
+            isSignedIn={Boolean(user)}
+            latestStatsUpdated={latestStatsUpdated}
+            onOpenSignIn={() => setIsSignInOpen(true)}
           />
         ) : (
           <LobbyScreen
@@ -244,6 +358,10 @@ export function App() {
             onStartGame={handleStartGame}
             onInfoToast={(msg) => addToast(msg, 'info')}
             onErrorToast={(msg) => addToast(msg, 'error')}
+            isAccountsEnabled={isAccountsConfigured}
+            isSignedIn={Boolean(user)}
+            accountDisplayName={accountDisplayName}
+            onOpenAccount={handleOpenAccount}
           />
         )
       ) : (
@@ -252,7 +370,34 @@ export function App() {
           onCreateRoom={handleCreateRoom}
           onJoinRoom={handleJoinRoom}
           onErrorToast={(msg) => addToast(msg, 'error')}
+          isAccountsEnabled={isAccountsConfigured}
+          isSignedIn={Boolean(user)}
+          accountDisplayName={accountDisplayName}
+          onOpenAccount={handleOpenAccount}
+          onOpenLeaderboard={() => setIsLeaderboardOpen(true)}
         />
+      )}
+
+      {isAccountsConfigured && (
+        <>
+          <SignInSheet
+            isOpen={isSignInOpen}
+            onClose={() => setIsSignInOpen(false)}
+            onSuccess={handleSignInSuccess}
+          />
+          <AccountSheet
+            isOpen={isAccountOpen}
+            onClose={() => setIsAccountOpen(false)}
+            onSignOut={handleSignOut}
+            onNameUpdated={(newName) => setAccountDisplayName(newName)}
+            onStatsDeleted={() => setLatestStatsUpdated(null)}
+          />
+          <LeaderboardSheet
+            isOpen={isLeaderboardOpen}
+            onClose={() => setIsLeaderboardOpen(false)}
+            isSignedIn={Boolean(user)}
+          />
+        </>
       )}
     </main>
   );

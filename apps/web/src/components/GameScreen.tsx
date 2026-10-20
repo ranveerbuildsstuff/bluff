@@ -10,6 +10,7 @@ import {
   cardCountLabel,
   cardsWord,
   ChallengeResult,
+  StatsUpdatedEvent,
 } from '@bluff/shared';
 
 interface GameScreenProps {
@@ -23,6 +24,10 @@ interface GameScreenProps {
   onPlayTurn: (cardIds: string[]) => void;
   onCallBluff: (playSeq: number) => void;
   onPlayAgain: () => void;
+  isAccountsEnabled?: boolean;
+  isSignedIn?: boolean;
+  latestStatsUpdated?: StatsUpdatedEvent | null;
+  onOpenSignIn?: () => void;
 }
 
 const SUIT_ICONS: Record<Suit, string> = {
@@ -50,12 +55,86 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   onPlayTurn,
   onCallBluff,
   onPlayAgain,
+  isAccountsEnabled = false,
+  isSignedIn = false,
+  latestStatsUpdated = null,
+  onOpenSignIn,
 }) => {
   const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
   const [isCallingBluff, setIsCallingBluff] = useState(false);
   const [flipped, setFlipped] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [pausedSeconds, setPausedSeconds] = useState<number | null>(null);
+  const [isGuestPromptDismissed, setIsGuestPromptDismissed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return sessionStorage.getItem('bluff_guest_prompt_dismissed') === 'true';
+  });
+
+  const handleDismissGuestPrompt = () => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('bluff_guest_prompt_dismissed', 'true');
+    }
+    setIsGuestPromptDismissed(true);
+  };
+
+  const renderAccountsGameOverCard = () => {
+    if (!isAccountsEnabled) return null;
+
+    if (isSignedIn) {
+      if (latestStatsUpdated) {
+        if (latestStatsUpdated.counted) {
+          return (
+            <div className="w-full p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs font-semibold text-center shadow-sm">
+              Saved! Wins: {latestStatsUpdated.wins} · Games: {latestStatsUpdated.gamesPlayed}
+            </div>
+          );
+        }
+        return (
+          <div className="w-full p-2.5 rounded-xl bg-slate-800/80 border border-slate-700/80 text-slate-300 text-xs text-center space-y-0.5">
+            <p className="font-semibold text-slate-200">
+              This game didn't count toward the leaderboard
+            </p>
+            <p className="text-[11px] text-slate-400">
+              {latestStatsUpdated.reason === 'NOT_RANKED'
+                ? 'needs at least 3 players'
+                : latestStatsUpdated.reason === 'ABANDONED'
+                ? 'the game was abandoned'
+                : ''}
+            </p>
+          </div>
+        );
+      }
+      return null;
+    }
+
+    if (isGuestPromptDismissed) return null;
+
+    return (
+      <div className="w-full p-3.5 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 text-left space-y-2.5 shadow-md">
+        <p className="text-xs text-indigo-200 font-medium leading-relaxed">
+          Save your wins and join the leaderboard. Sign in to keep your stats.
+        </p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenSignIn}
+            className="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold text-xs min-h-[44px] flex items-center justify-center transition-colors shadow-md shadow-indigo-600/25"
+            style={{ touchAction: 'manipulation' }}
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            onClick={handleDismissGuestPrompt}
+            className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-slate-800 text-slate-300 font-medium text-xs min-h-[44px] flex items-center justify-center transition-colors border border-slate-700"
+            style={{ touchAction: 'manipulation' }}
+          >
+            Not now
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   // Clear selection after a successful play or status change
   useEffect(() => {
@@ -716,6 +795,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                   </p>
                 </div>
 
+                {renderAccountsGameOverCard()}
+
                 <div className="w-full flex flex-col gap-2.5 mt-2">
                   <button
                     type="button"
@@ -744,6 +825,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                       : `${winnerPlayer?.name ?? 'Opponent'} emptied their hand and survived the final call!`}
                   </p>
                 </div>
+
+                {renderAccountsGameOverCard()}
 
                 <div className="w-full flex flex-col gap-2.5 mt-2">
                   {isHost ? (
