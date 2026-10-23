@@ -22,6 +22,7 @@ export const LeaderboardSheet: React.FC<LeaderboardSheetProps> = ({
   } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadTrigger, setLoadTrigger] = useState(0);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -55,13 +56,9 @@ export const LeaderboardSheet: React.FC<LeaderboardSheetProps> = ({
           setEntries(leaderboard);
           setMyStats(meData);
         }
-      } catch (err: unknown) {
+      } catch {
         if (!isCancelled) {
-          if (err instanceof Error) {
-            setError(err.message);
-          } else {
-            setError('Failed to load leaderboard');
-          }
+          setError('Could not load leaderboard. Please check your connection and try again.');
         }
       } finally {
         if (!isCancelled) {
@@ -75,7 +72,7 @@ export const LeaderboardSheet: React.FC<LeaderboardSheetProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [isOpen, isSignedIn]);
+  }, [isOpen, isSignedIn, loadTrigger]);
 
   if (!isOpen) return null;
 
@@ -108,7 +105,15 @@ export const LeaderboardSheet: React.FC<LeaderboardSheetProps> = ({
         <div className="flex-1 overflow-y-auto py-4">
           {error && (
             <div className="p-3 mb-4 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs">
-              {error}
+              <p className="mb-2">{error}</p>
+              <button
+                type="button"
+                onClick={() => setLoadTrigger((n) => n + 1)}
+                className="px-4 py-2 rounded-lg bg-rose-500/25 hover:bg-rose-500/40 text-rose-200 font-semibold text-xs min-h-[44px] transition-colors"
+                style={{ touchAction: 'manipulation' }}
+              >
+                Retry
+              </button>
             </div>
           )}
 

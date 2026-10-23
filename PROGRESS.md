@@ -10,6 +10,7 @@
 - [x] Mini: Join by Link & small text fixes
 - [x] Slice 7: Optional accounts & stats (server)
 - [x] Slice 8: Accounts & leaderboard UI
+- [x] Slice 9: Accounts bug fixes
 
 ## Decisions & deviations
 ### Slice 1: Scaffold, identity & lobby
@@ -424,3 +425,25 @@
   - Client -> Server: `identify`, `sign_out`
   - Server -> Client: `identified`, `stats_updated`
 - **Deviations**: None.
+
+### Slice 9: Accounts bug fixes
+- **Root causes**:
+  - **Bug 1 ("Invalid response from server" in AccountSheet)**: Google sign-in provides the user's full name from their Google profile (e.g. "Ranveer Singh Rajput", 20 characters). When storing or reading user stats in `ensureUser`, the server returned the full unsanitized name without truncating it to 16 characters. When the web client fetched `GET /api/me`, it validated the response against `MeResponseSchema` which strictly enforces `displayName: z.string().min(1).max(16)`. The validation failed, threw `"Invalid response from server"`, and AccountSheet fell back to the default "Player" with 0 games and 0 wins.
+  - **Bug 2 (Leaderboard listing accounts with 0 games played)**: Both `FirestoreStatsStore.getLeaderboard` and `InMemoryStatsStore.getLeaderboard` queried user records without filtering out accounts with `gamesPlayed < 1`. Newly signed-in users with 0 games were therefore included in the leaderboard.
+- **What was fixed/built**:
+  - Enforced `(displayName?.trim() || 'Player').slice(0, 16)` across all store methods (`ensureUser`, `getStats`, `getLeaderboard`, `setDisplayName`) in both `FirestoreStatsStore` and `InMemoryStatsStore`, and in the Express `/api` router for `GET /api/me`, `PATCH /api/me`, and `GET /api/leaderboard`.
+  - Filtered `getLeaderboard` to strictly include only accounts with `gamesPlayed >= 1` in both `FirestoreStatsStore` and `InMemoryStatsStore`.
+  - Ensured `GET /api/me` for a newly signed-in user with no stats yet returns zeros (`gamesPlayed: 0`, `wins: 0`, `winRate: 0`) and their display name (truncated to 16 characters or defaulting to "Player"), never an error.
+  - Updated `AccountSheet` and `LeaderboardSheet` to show friendly error messages (`Could not load account details...` / `Could not load leaderboard...`) instead of raw error strings, with touch-friendly (`min-h-[44px]`) "Retry" buttons.
+  - Added comprehensive API contract tests in `apps/server/src/__tests__/slice9-api-contract.test.ts` invoking the real Express handlers with `InMemoryStatsStore` and `FakeTokenVerifier`, validating every response directly against the shared `@bluff/shared` Zod schemas (`MeResponseSchema`, `LeaderboardEntrySchema`), asserting that drifts fail tests immediately.
+- **Key file paths**:
+  - [apps/server/src/stats/firestore.ts](file:///e:/ranveer/BLUFF/apps/server/src/stats/firestore.ts)
+  - [apps/server/src/stats/in-memory.ts](file:///e:/ranveer/BLUFF/apps/server/src/stats/in-memory.ts)
+  - [apps/server/src/http/index.ts](file:///e:/ranveer/BLUFF/apps/server/src/http/index.ts)
+  - [apps/server/src/__tests__/slice9-api-contract.test.ts](file:///e:/ranveer/BLUFF/apps/server/src/__tests__/slice9-api-contract.test.ts)
+  - [apps/web/src/components/AccountSheet.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/AccountSheet.tsx)
+  - [apps/web/src/components/LeaderboardSheet.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/LeaderboardSheet.tsx)
+  - [PROGRESS.md](file:///e:/ranveer/BLUFF/PROGRESS.md)
+- **Event names**: No event changes.
+- **Deviations**: None.
+

@@ -24,7 +24,7 @@ export class InMemoryStatsStore implements StatsStore {
     let user = this.users.get(uid);
     if (!user) {
       const now = Date.now();
-      const displayName = initialDisplayName?.trim() || 'Player';
+      const displayName = (initialDisplayName?.trim() || 'Player').slice(0, 16);
       user = {
         displayName,
         gamesPlayed: 0,
@@ -35,7 +35,7 @@ export class InMemoryStatsStore implements StatsStore {
       this.users.set(uid, user);
     }
     return {
-      displayName: user.displayName,
+      displayName: (user.displayName || 'Player').slice(0, 16),
       gamesPlayed: user.gamesPlayed,
       wins: user.wins,
       winRate: calculateWinRate(user.wins, user.gamesPlayed),
@@ -79,7 +79,7 @@ export class InMemoryStatsStore implements StatsStore {
     const user = this.users.get(uid);
     if (!user) return null;
     return {
-      displayName: user.displayName,
+      displayName: (user.displayName || 'Player').slice(0, 16),
       gamesPlayed: user.gamesPlayed,
       wins: user.wins,
       winRate: calculateWinRate(user.wins, user.gamesPlayed),
@@ -89,12 +89,15 @@ export class InMemoryStatsStore implements StatsStore {
   }
 
   async getLeaderboard(limit = 20): Promise<LeaderboardEntry[]> {
-    const entries = Array.from(this.users.values()).map((user) => ({
-      displayName: user.displayName,
-      wins: user.wins,
-      gamesPlayed: user.gamesPlayed,
-      winRate: calculateWinRate(user.wins, user.gamesPlayed),
-    }));
+    // Only include users who have played at least one game
+    const entries = Array.from(this.users.values())
+      .filter((user) => user.gamesPlayed >= 1)
+      .map((user) => ({
+        displayName: (user.displayName || 'Player').slice(0, 16),
+        wins: user.wins,
+        gamesPlayed: user.gamesPlayed,
+        winRate: calculateWinRate(user.wins, user.gamesPlayed),
+      }));
 
     // Ordered by wins desc, then winRate desc, then displayName asc
     entries.sort((a, b) => {
@@ -119,7 +122,7 @@ export class InMemoryStatsStore implements StatsStore {
       await this.ensureUser(uid, name);
       user = this.users.get(uid)!;
     }
-    user.displayName = name;
+    user.displayName = (name.trim() || 'Player').slice(0, 16);
     user.updatedAt = Date.now();
     return {
       displayName: user.displayName,

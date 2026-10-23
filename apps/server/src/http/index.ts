@@ -101,10 +101,10 @@ export function createApiRouter(options: HttpOptions): Router {
       const entries = await cache.get(limit, (fetchLimit) =>
         options.statsStore.getLeaderboard(fetchLimit)
       );
-      // Ensure no uid or email in any response
+      // Ensure no uid or email in any response and displayName is clean (<= 16 chars)
       const sanitized: LeaderboardEntry[] = entries.map((e) => ({
         rank: e.rank,
-        displayName: e.displayName,
+        displayName: (e.displayName?.trim() || 'Player').slice(0, 16),
         wins: e.wins,
         gamesPlayed: e.gamesPlayed,
         winRate: e.winRate,
@@ -123,7 +123,7 @@ export function createApiRouter(options: HttpOptions): Router {
         req.user!.name
       );
       return res.json({
-        displayName: user.displayName,
+        displayName: (user.displayName?.trim() || 'Player').slice(0, 16),
         gamesPlayed: user.gamesPlayed,
         wins: user.wins,
         winRate: user.winRate,
@@ -149,7 +149,7 @@ export function createApiRouter(options: HttpOptions): Router {
         parseResult.data.name
       );
       return res.json({
-        displayName: updated.displayName,
+        displayName: (updated.displayName?.trim() || 'Player').slice(0, 16),
         gamesPlayed: updated.gamesPlayed,
         wins: updated.wins,
         winRate: updated.winRate,

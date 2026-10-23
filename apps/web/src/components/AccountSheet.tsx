@@ -34,6 +34,7 @@ export const AccountSheet: React.FC<AccountSheetProps> = ({
   const [success, setSuccess] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [loadTrigger, setLoadTrigger] = useState(0);
 
   useEffect(() => {
     if (!isOpen) {
@@ -56,13 +57,9 @@ export const AccountSheet: React.FC<AccountSheetProps> = ({
           setProfile(data);
           setNameInput(data.displayName);
         }
-      } catch (err: unknown) {
+      } catch {
         if (!isCancelled) {
-          if (err instanceof Error) {
-            setError(err.message);
-          } else {
-            setError('Failed to load profile');
-          }
+          setError('Could not load account details. Please check your connection and try again.');
         }
       } finally {
         if (!isCancelled) {
@@ -76,7 +73,7 @@ export const AccountSheet: React.FC<AccountSheetProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [isOpen]);
+  }, [isOpen, loadTrigger]);
 
   if (!isOpen) return null;
 
@@ -169,7 +166,17 @@ export const AccountSheet: React.FC<AccountSheetProps> = ({
         {/* Feedback Messages */}
         {error && (
           <div className="mb-4 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium leading-relaxed">
-            {error}
+            <p className="mb-2">{error}</p>
+            {!profile && (
+              <button
+                type="button"
+                onClick={() => setLoadTrigger((n) => n + 1)}
+                className="px-4 py-2 rounded-lg bg-rose-500/25 hover:bg-rose-500/40 text-rose-200 font-semibold text-xs min-h-[44px] transition-colors"
+                style={{ touchAction: 'manipulation' }}
+              >
+                Retry
+              </button>
+            )}
           </div>
         )}
         {success && (

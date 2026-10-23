@@ -39,7 +39,7 @@ export class FirestoreStatsStore implements StatsStore {
 
     if (!snap.exists) {
       const now = Date.now();
-      const displayName = initialDisplayName?.trim() || 'Player';
+      const displayName = (initialDisplayName?.trim() || 'Player').slice(0, 16);
       const data = {
         displayName,
         gamesPlayed: 0,
@@ -58,7 +58,7 @@ export class FirestoreStatsStore implements StatsStore {
     const wins = typeof data.wins === 'number' ? data.wins : 0;
     const gamesPlayed = typeof data.gamesPlayed === 'number' ? data.gamesPlayed : 0;
     return {
-      displayName: data.displayName || 'Player',
+      displayName: (data.displayName?.trim() || 'Player').slice(0, 16),
       gamesPlayed,
       wins,
       winRate: calculateWinRate(wins, gamesPlayed),
@@ -131,7 +131,7 @@ export class FirestoreStatsStore implements StatsStore {
     const wins = typeof data.wins === 'number' ? data.wins : 0;
     const gamesPlayed = typeof data.gamesPlayed === 'number' ? data.gamesPlayed : 0;
     return {
-      displayName: data.displayName || 'Player',
+      displayName: (data.displayName?.trim() || 'Player').slice(0, 16),
       gamesPlayed,
       wins,
       winRate: calculateWinRate(wins, gamesPlayed),
@@ -144,20 +144,23 @@ export class FirestoreStatsStore implements StatsStore {
     const snap = await this.db
       .collection('users')
       .orderBy('wins', 'desc')
-      .limit(limit)
+      .limit(Math.max(limit * 3, 100))
       .get();
 
-    const entries = snap.docs.map((doc: QueryDocumentSnapshot) => {
-      const data = doc.data();
-      const wins = typeof data.wins === 'number' ? data.wins : 0;
-      const gamesPlayed = typeof data.gamesPlayed === 'number' ? data.gamesPlayed : 0;
-      return {
-        displayName: (data.displayName || 'Player').slice(0, 16),
-        wins,
-        gamesPlayed,
-        winRate: calculateWinRate(wins, gamesPlayed),
-      };
-    });
+    const entries = snap.docs
+      .map((doc: QueryDocumentSnapshot) => {
+        const data = doc.data();
+        const wins = typeof data.wins === 'number' ? data.wins : 0;
+        const gamesPlayed = typeof data.gamesPlayed === 'number' ? data.gamesPlayed : 0;
+        return {
+          displayName: (data.displayName?.trim() || 'Player').slice(0, 16),
+          wins,
+          gamesPlayed,
+          winRate: calculateWinRate(wins, gamesPlayed),
+        };
+      })
+      // Only include users who have played at least one game
+      .filter((e) => e.gamesPlayed >= 1);
 
     entries.sort(
       (
@@ -182,13 +185,14 @@ export class FirestoreStatsStore implements StatsStore {
   async setDisplayName(uid: string, name: string): Promise<UserStats> {
     const userRef = this.db.collection('users').doc(uid);
     const now = Date.now();
-    await userRef.set({ displayName: name, updatedAt: now }, { merge: true });
+    const cleanName = (name.trim() || 'Player').slice(0, 16);
+    await userRef.set({ displayName: cleanName, updatedAt: now }, { merge: true });
     const snap = await userRef.get();
     const data = snap.data()!;
     const wins = typeof data.wins === 'number' ? data.wins : 0;
     const gamesPlayed = typeof data.gamesPlayed === 'number' ? data.gamesPlayed : 0;
     return {
-      displayName: data.displayName || name,
+      displayName: (data.displayName?.trim() || cleanName).slice(0, 16),
       gamesPlayed,
       wins,
       winRate: calculateWinRate(wins, gamesPlayed),
