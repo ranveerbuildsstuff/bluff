@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { PlayerNameSchema, pluralize } from '@bluff/shared';
 import { getMe, updateMyName, deleteMyStats } from '../api';
 import { getFreshIdToken } from '../firebase';
+import { Sheet } from '../ui/Sheet';
+import { Button } from '../ui/Button';
+import { Avatar } from '../ui/Avatar';
+import { Card } from '../ui/Card';
 
 interface AccountSheetProps {
   isOpen: boolean;
@@ -136,66 +140,53 @@ export const AccountSheet: React.FC<AccountSheetProps> = ({
     }
   };
 
-  const initialLetter = (profile?.displayName || 'P').charAt(0).toUpperCase();
-
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex flex-col justify-end sm:justify-center items-center p-0 sm:p-4">
-      <div className="w-full sm:max-w-[380px] bg-slate-900 border-t sm:border border-slate-700/80 rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-lg shadow-md">
-              {initialLetter}
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-white">My Account</h2>
-              <p className="text-xs text-slate-400">Signed in player</p>
-            </div>
+    <Sheet
+      isOpen={isOpen}
+      onClose={onClose}
+      title={
+        <div className="flex items-center gap-3">
+          <Avatar name={profile?.displayName || 'Player'} size="md" />
+          <div>
+            <div className="text-base font-bold text-[#F5F3FF]">My Account</div>
+            <div className="text-xs text-[#A89BC8] font-normal">Signed in player</div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-11 h-11 rounded-full text-slate-400 hover:text-white flex items-center justify-center text-lg min-h-[44px] min-w-[44px]"
-            style={{ touchAction: 'manipulation' }}
-            aria-label="Close"
-          >
-            ✕
-          </button>
         </div>
-
+      }
+    >
+      <div className="space-y-4">
         {/* Feedback Messages */}
         {error && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium leading-relaxed">
+          <div className="p-3 rounded-xl bg-[#F43F5E]/15 border border-[#F43F5E]/30 text-rose-300 text-xs font-medium leading-relaxed">
             <p className="mb-2">{error}</p>
             {!profile && (
-              <button
-                type="button"
+              <Button
+                variant="danger"
+                size="sm"
                 onClick={() => setLoadTrigger((n) => n + 1)}
-                className="px-4 py-2 rounded-lg bg-rose-500/25 hover:bg-rose-500/40 text-rose-200 font-semibold text-xs min-h-[44px] transition-colors"
-                style={{ touchAction: 'manipulation' }}
               >
                 Retry
-              </button>
+              </Button>
             )}
           </div>
         )}
         {success && (
-          <div className="mb-4 p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-medium leading-relaxed">
+          <div className="p-3 rounded-xl bg-[#22C55E]/15 border border-[#22C55E]/30 text-emerald-300 text-xs font-medium leading-relaxed">
             {success}
           </div>
         )}
 
         {isLoading ? (
-          <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400 text-sm">
-            <div className="w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+          <div className="py-12 flex flex-col items-center justify-center gap-2 text-[#A89BC8] text-sm">
+            <div className="w-6 h-6 border-2 border-[#A855F7] border-t-transparent rounded-full animate-spin" />
             <span>Loading profile...</span>
           </div>
         ) : (
-          <div className="space-y-5">
+          <div className="space-y-4">
             {/* Display Name Section */}
-            <div className="bg-slate-800/80 border border-slate-700/70 rounded-2xl p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+            <Card variant="surface-2" padding="sm" className="rounded-2xl">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-bold text-[#A89BC8] uppercase tracking-wider">
                   Display Name
                 </span>
                 {!isEditingName && (
@@ -205,7 +196,7 @@ export const AccountSheet: React.FC<AccountSheetProps> = ({
                       setIsEditingName(true);
                       setNameInput(profile?.displayName || '');
                     }}
-                    className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 min-h-[44px] flex items-center"
+                    className="text-xs font-bold text-[#A855F7] hover:text-purple-300 min-h-[44px] px-2 flex items-center"
                     style={{ touchAction: 'manipulation' }}
                   >
                     Edit
@@ -221,130 +212,131 @@ export const AccountSheet: React.FC<AccountSheetProps> = ({
                     onChange={(e) => setNameInput(e.target.value)}
                     maxLength={16}
                     placeholder="Enter new name"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[44px]"
+                    className="w-full px-3 py-2 rounded-xl bg-[#1A1030] border border-[rgba(167,139,250,0.2)] text-[#F5F3FF] text-sm focus:outline-none focus:ring-2 focus:ring-[#A855F7] min-h-[44px]"
                   />
                   <div className="flex items-center gap-2">
-                    <button
+                    <Button
                       type="submit"
-                      disabled={isSavingName}
-                      className="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white text-xs font-semibold min-h-[44px] transition-colors disabled:opacity-50"
-                      style={{ touchAction: 'manipulation' }}
+                      variant="primary"
+                      size="sm"
+                      isLoading={isSavingName}
+                      className="flex-1"
                     >
-                      {isSavingName ? 'Saving...' : 'Save Name'}
-                    </button>
-                    <button
+                      Save Name
+                    </Button>
+                    <Button
                       type="button"
+                      variant="secondary"
+                      size="sm"
                       onClick={() => {
                         setIsEditingName(false);
                         setNameInput(profile?.displayName || '');
                       }}
-                      className="py-2 px-3 rounded-xl bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-slate-300 text-xs font-semibold min-h-[44px] transition-colors"
-                      style={{ touchAction: 'manipulation' }}
                     >
                       Cancel
-                    </button>
+                    </Button>
                   </div>
                 </form>
               ) : (
-                <div className="text-base font-bold text-white tracking-wide">
+                <div className="text-base font-bold text-[#F5F3FF] tracking-wide">
                   {profile?.displayName || 'Player'}
                 </div>
               )}
-            </div>
+            </Card>
 
             {/* Stats Overview */}
             <div className="grid grid-cols-3 gap-2">
-              <div className="bg-slate-800/80 border border-slate-700/70 rounded-2xl p-3 text-center">
-                <span className="text-[11px] font-semibold text-slate-400 block uppercase tracking-wider mb-1">
+              <Card variant="surface-2" padding="sm" className="text-center rounded-2xl">
+                <span className="text-[11px] font-bold text-[#A89BC8] block uppercase tracking-wider mb-1">
                   Games
                 </span>
-                <span className="font-mono text-xl font-black text-white">
+                <span className="font-mono text-xl font-black text-[#F5F3FF]">
                   {profile?.gamesPlayed ?? 0}
                 </span>
-                <span className="text-[10px] text-slate-400 block mt-0.5">
+                <span className="text-[10px] text-[#A89BC8] block mt-0.5">
                   {pluralize(profile?.gamesPlayed ?? 0, 'played', 'played')}
                 </span>
-              </div>
+              </Card>
 
-              <div className="bg-slate-800/80 border border-slate-700/70 rounded-2xl p-3 text-center">
-                <span className="text-[11px] font-semibold text-amber-400 block uppercase tracking-wider mb-1">
+              <Card variant="surface-2" padding="sm" className="text-center rounded-2xl">
+                <span className="text-[11px] font-bold text-[#F5B942] block uppercase tracking-wider mb-1">
                   Wins
                 </span>
-                <span className="font-mono text-xl font-black text-amber-300">
+                <span className="font-mono text-xl font-black text-[#F5B942]">
                   {profile?.wins ?? 0}
                 </span>
-                <span className="text-[10px] text-slate-400 block mt-0.5">
+                <span className="text-[10px] text-[#A89BC8] block mt-0.5">
                   {pluralize(profile?.wins ?? 0, 'win')}
                 </span>
-              </div>
+              </Card>
 
-              <div className="bg-slate-800/80 border border-slate-700/70 rounded-2xl p-3 text-center">
-                <span className="text-[11px] font-semibold text-emerald-400 block uppercase tracking-wider mb-1">
+              <Card variant="surface-2" padding="sm" className="text-center rounded-2xl">
+                <span className="text-[11px] font-bold text-[#22C55E] block uppercase tracking-wider mb-1">
                   Win %
                 </span>
-                <span className="font-mono text-xl font-black text-emerald-300">
+                <span className="font-mono text-xl font-black text-[#22C55E]">
                   {Math.round((profile?.winRate ?? 0) * 100)}%
                 </span>
-                <span className="text-[10px] text-slate-400 block mt-0.5">
+                <span className="text-[10px] text-[#A89BC8] block mt-0.5">
                   rate
                 </span>
-              </div>
+              </Card>
             </div>
 
             {/* Actions: Sign out & Delete Stats */}
             <div className="pt-2 space-y-3">
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                size="md"
+                fullWidth
                 onClick={() => {
                   onSignOut();
                   onClose();
                 }}
-                className="w-full min-h-[48px] rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-slate-800 text-slate-200 font-semibold text-sm border border-slate-700 transition-colors flex items-center justify-center gap-2"
-                style={{ touchAction: 'manipulation' }}
               >
-                <span>Sign out</span>
-              </button>
+                Sign out
+              </Button>
 
               {confirmDelete ? (
-                <div className="p-3.5 rounded-2xl bg-rose-950/40 border border-rose-500/40 space-y-2.5">
+                <div className="p-3.5 rounded-2xl bg-[#F43F5E]/10 border border-[#F43F5E]/30 space-y-2.5">
                   <p className="text-xs font-semibold text-rose-300 leading-snug">
                     Are you sure? This permanently deletes your stats and leaderboard ranking.
                   </p>
                   <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={isDeleting}
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      isLoading={isDeleting}
                       onClick={handleDeleteStats}
-                      className="flex-1 py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white text-xs font-bold min-h-[44px] transition-colors disabled:opacity-50"
-                      style={{ touchAction: 'manipulation' }}
+                      className="flex-1 font-bold"
                     >
-                      {isDeleting ? 'Deleting...' : 'Yes, delete my stats'}
-                    </button>
-                    <button
-                      type="button"
+                      Yes, delete my stats
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
                       disabled={isDeleting}
                       onClick={() => setConfirmDelete(false)}
-                      className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold min-h-[44px] transition-colors"
-                      style={{ touchAction: 'manipulation' }}
                     >
                       Cancel
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ) : (
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  fullWidth
                   onClick={() => setConfirmDelete(true)}
-                  className="w-full text-xs text-rose-400 hover:text-rose-300 active:text-rose-500 font-medium py-2 min-h-[44px] flex items-center justify-center transition-colors"
-                  style={{ touchAction: 'manipulation' }}
+                  className="text-xs text-[#F43F5E] hover:text-rose-300"
                 >
                   Delete my stats
-                </button>
+                </Button>
               )}
             </div>
           </div>
         )}
       </div>
-    </div>
+    </Sheet>
   );
 };

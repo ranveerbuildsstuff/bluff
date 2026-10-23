@@ -11,6 +11,7 @@
 - [x] Slice 7: Optional accounts & stats (server)
 - [x] Slice 8: Accounts & leaderboard UI
 - [x] Slice 9: Accounts bug fixes
+- [x] Slice 10: Design system, landing, lobby, how to play
 
 ## Decisions & deviations
 ### Slice 1: Scaffold, identity & lobby
@@ -446,4 +447,77 @@
   - [PROGRESS.md](file:///e:/ranveer/BLUFF/PROGRESS.md)
 - **Event names**: No event changes.
 - **Deviations**: None.
+
+### Slice 10: Design system, landing, lobby, how to play
+- **What was built**:
+  - **Self-hosted font & Design Tokens**:
+    - Installed `@fontsource/outfit` (weights 400, 600, 800) in `@bluff/web` with zero external CDNs.
+    - Tailored design tokens in `tailwind.config.js` and CSS variables in `index.css`:
+      - `bg: #0B0716` to `#140A2A` gradient with soft violet radial glow at the top.
+      - `surface #1A1030`, `surface-2 #221440`, `border rgba(167,139,250,0.18)`.
+      - `primary gradient #7C3AED` to `#A855F7` with soft glow.
+      - `gold #F5B942`, `danger #F43F5E`, `success #22C55E`, `text #F5F3FF`, `muted #A89BC8`.
+      - BLUFF Logo typography: weight 800, `skewX(-8deg)`, violet-to-pink gradient with drop-shadow glow.
+      - Full accessibility: touch targets >= 44px, text contrast >= 4.5:1, visible focus rings, aria labels, and `prefers-reduced-motion` compliance.
+  - **Shared UI Kit (`apps/web/src/ui/`)**:
+    - `Button.tsx`: primary, secondary, ghost, and danger variants; loading spinner; full-width option; touch target >= 44px; visible focus rings.
+    - `Sheet.tsx`: mobile bottom sheet sliding up with rounded-t-3xl; centered modal dialog on desktop with focus trap, Escape key dismiss, and backdrop click dismiss; fullScreen mode for mobile guides.
+    - `Card.tsx`: surface background, subtle border, shadow, and configurable padding.
+    - `Pill.tsx`: status/tag badge for roles, connections, and counts.
+    - `Avatar.tsx`: deterministic color selection from a hash of the name, rendering the uppercase initial.
+    - `PlayingCard.tsx`: face-up and face-down cards built with pure SVG/CSS without any external image files.
+    - `Toast.tsx`: toast notifications with design tokens and >= 44px dismiss target.
+  - **Restyled Sheets**:
+    - `SignInSheet.tsx`, `AccountSheet.tsx`, and `LeaderboardSheet.tsx` restyled with `Sheet` and `Button` while strictly preserving all existing auth, profile update, leaderboard, and delete stats logic.
+    - `AccountButton.tsx` restyled to render the user's `Avatar` circle with hash coloring.
+  - **Landing Screen (`LandingScreen.tsx`)**:
+    - Hero: "BLUFF" logo above an overlapping fan of 4 playing cards (A♠, K♥, Q♦, J♣) with gentle idle float animation (`animate-idle-float`).
+    - Name field prefilled from account display name if signed in, remembered in localStorage with try/catch.
+    - "Create room" (primary), "Join with code" (secondary, opening Join Sheet), and "How to play" (ghost) buttons.
+    - Join Sheet: big 6-character room code input with auto-uppercase, paste support, and join button disabled until exactly 6 valid characters.
+    - Top bar: Leaderboard and account buttons (hidden when accounts disabled).
+    - Footer chips: "Guests welcome", "No download", "Play with friends anywhere".
+    - First visit only: small dismissible nudge "New here? Learn in 30 seconds" backed by `bluff_has_visited` in localStorage.
+  - **Lobby Screen (`LobbyScreen.tsx`)**:
+    - Room code card: big stylized code, "Share Room Code" (Web Share API with fallback to copying join link), and "Copy code" button.
+    - Players list as seats: Avatar, name, host crown, live green/grey connection dot, "You" tag, "X/8 players" badge, and dashed "Waiting..." seat placeholders.
+    - Host settings card: cards-per-player stepper control and 5 / 7 / 10 presets with recommended hint. Read-only summary for non-host.
+    - Start button: "Deal & Start Game" disabled when playerCount < 2 with "Need at least 2 players" message. Non-host sees "Waiting for the host to start".
+    - Leave confirmation sheet preventing accidental departures. Account button positioned safely without overlapping Leave.
+  - **How to Play (`HowToPlayModal.tsx`)**:
+    - 8-step full-screen sheet with progress dots, Back, Next, Skip, and "Got it" button on the final step.
+    - Illustrated with `PlayingCard` cards (including flip animation for challenge reveal).
+    - Exact required copy across all 8 steps.
+  - **GameScreen (`GameScreen.tsx`)**:
+    - Functional and readable, inherits global background and Outfit font without modifications to game engine or play loop (deferred to Slice 11).
+  - **Tests**:
+    - Added `apps/web/src/__tests__/slice10-design-system.test.tsx` (22 tests) covering all 8 HowToPlay steps, stepper navigation, join code input constraints, first-visit nudge lifecycle, UI Kit variants, and Lobby seat rendering.
+    - Updated `mini-join-by-link.test.tsx` and `slice8-accounts-and-leaderboard.test.tsx` to match intentional UI structure and text updates.
+    - Total test suite: 220 tests passing across 22 test files.
+- **Key file paths**:
+  - [apps/web/package.json](file:///e:/ranveer/BLUFF/apps/web/package.json)
+  - [apps/web/tailwind.config.js](file:///e:/ranveer/BLUFF/apps/web/tailwind.config.js)
+  - [apps/web/src/index.css](file:///e:/ranveer/BLUFF/apps/web/src/index.css)
+  - [apps/web/index.html](file:///e:/ranveer/BLUFF/apps/web/index.html)
+  - [apps/web/src/App.tsx](file:///e:/ranveer/BLUFF/apps/web/src/App.tsx)
+  - [apps/web/src/ui/Button.tsx](file:///e:/ranveer/BLUFF/apps/web/src/ui/Button.tsx)
+  - [apps/web/src/ui/Sheet.tsx](file:///e:/ranveer/BLUFF/apps/web/src/ui/Sheet.tsx)
+  - [apps/web/src/ui/Card.tsx](file:///e:/ranveer/BLUFF/apps/web/src/ui/Card.tsx)
+  - [apps/web/src/ui/Pill.tsx](file:///e:/ranveer/BLUFF/apps/web/src/ui/Pill.tsx)
+  - [apps/web/src/ui/Avatar.tsx](file:///e:/ranveer/BLUFF/apps/web/src/ui/Avatar.tsx)
+  - [apps/web/src/ui/PlayingCard.tsx](file:///e:/ranveer/BLUFF/apps/web/src/ui/PlayingCard.tsx)
+  - [apps/web/src/ui/Toast.tsx](file:///e:/ranveer/BLUFF/apps/web/src/ui/Toast.tsx)
+  - [apps/web/src/ui/index.ts](file:///e:/ranveer/BLUFF/apps/web/src/ui/index.ts)
+  - [apps/web/src/components/HowToPlayModal.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/HowToPlayModal.tsx)
+  - [apps/web/src/components/LandingScreen.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/LandingScreen.tsx)
+  - [apps/web/src/components/LobbyScreen.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/LobbyScreen.tsx)
+  - [apps/web/src/components/SignInSheet.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/SignInSheet.tsx)
+  - [apps/web/src/components/AccountSheet.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/AccountSheet.tsx)
+  - [apps/web/src/components/LeaderboardSheet.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/LeaderboardSheet.tsx)
+  - [apps/web/src/components/AccountButton.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/AccountButton.tsx)
+  - [apps/web/src/components/ToastContainer.tsx](file:///e:/ranveer/BLUFF/apps/web/src/components/ToastContainer.tsx)
+  - [apps/web/src/__tests__/slice10-design-system.test.tsx](file:///e:/ranveer/BLUFF/apps/web/src/__tests__/slice10-design-system.test.tsx)
+- **Event names**: No server event changes.
+- **Deviations**: None.
+
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   RoomView,
   maxCardsPerPlayer,
@@ -6,8 +6,13 @@ import {
   pluralize,
   buildRoomLink,
 } from '@bluff/shared';
-
+import { Button } from '../ui/Button';
+import { Sheet } from '../ui/Sheet';
+import { Card } from '../ui/Card';
+import { Pill } from '../ui/Pill';
+import { Avatar } from '../ui/Avatar';
 import { AccountButton } from './AccountButton';
+import { HowToPlayModal } from './HowToPlayModal';
 
 interface LobbyScreenProps {
   roomView: RoomView;
@@ -38,6 +43,9 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   accountDisplayName = null,
   onOpenAccount,
 }) => {
+  const [isConfirmLeaveOpen, setIsConfirmLeaveOpen] = useState(false);
+  const [isHowToPlayOpen, setIsHowToPlayOpen] = useState(false);
+
   const isHost = roomView.hostId === currentPlayerId;
   const playerCount = roomView.players.length;
   const maxAllowed = maxCardsPerPlayer(playerCount);
@@ -92,24 +100,28 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   };
 
   const presets = [5, 7, 10];
+  const maxSeats = 8;
+  const emptySeatsCount = Math.max(0, maxSeats - playerCount);
 
   return (
-    <div className="w-full max-w-[360px] mx-auto px-4 py-6 flex flex-col justify-between min-h-[640px]">
-      {/* Top Bar: Connection & Leave */}
+    <div className="w-full max-w-app mx-auto px-4 py-4 sm:py-6 flex flex-col justify-between min-h-[100dvh]">
       <div>
-        <div className="flex items-center justify-between mb-4 gap-2">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="flex items-center gap-1.5 shrink-0">
+        {/* Top Bar: Connection, Account, How to Play, Leave Lobby */}
+        <header className="flex items-center justify-between mb-4 gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            {/* Live Connection Dot */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#221440] border border-[rgba(167,139,250,0.18)] shrink-0">
               <span
-                className={`w-2.5 h-2.5 rounded-full ${
-                  isSocketConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'
+                className={`w-2 h-2 rounded-full ${
+                  isSocketConnected ? 'bg-[#22C55E] animate-pulse' : 'bg-[#A89BC8]'
                 }`}
               />
-              <span className="text-xs font-medium text-slate-400">
+              <span className="text-[11px] font-semibold text-[#A89BC8]">
                 {isSocketConnected ? 'Connected' : 'Reconnecting...'}
               </span>
             </div>
 
+            {/* Account Profile Button */}
             {isAccountsEnabled && (
               <AccountButton
                 isSignedIn={Boolean(isSignedIn)}
@@ -119,33 +131,46 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={onLeaveRoom}
-            className="shrink-0 text-xs font-semibold text-rose-400 hover:text-rose-300 active:text-rose-500 px-3 py-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 min-h-[44px] flex items-center justify-center transition-colors"
-            style={{ touchAction: 'manipulation' }}
-          >
-            Leave Lobby
-          </button>
-        </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsHowToPlayOpen(true)}
+              className="min-h-[44px] min-w-[44px] rounded-xl text-xs font-bold text-[#A89BC8] hover:text-[#F5F3FF] hover:bg-white/5 active:bg-white/10 flex items-center justify-center p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A855F7]"
+              style={{ touchAction: 'manipulation' }}
+              aria-label="How to play"
+            >
+              ❓ Rules
+            </button>
 
-        {/* Room Code Showcase */}
-        <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-5 shadow-xl text-center mb-5">
-          <span className="text-xs uppercase font-bold tracking-widest text-slate-400 block mb-1">
+            <button
+              type="button"
+              onClick={() => setIsConfirmLeaveOpen(true)}
+              className="text-xs font-bold text-[#F43F5E] hover:text-rose-300 active:text-rose-400 px-3 py-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 min-h-[44px] flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F43F5E]"
+              style={{ touchAction: 'manipulation' }}
+            >
+              Leave Lobby
+            </button>
+          </div>
+        </header>
+
+        {/* Room Code Card */}
+        <Card variant="surface" padding="md" className="text-center mb-4 shadow-2xl">
+          <span className="text-xs uppercase font-extrabold tracking-widest text-[#A89BC8] block mb-1">
             Room Code
           </span>
-          <div className="font-mono font-black text-4xl tracking-widest text-indigo-400 my-2 select-all">
+          <div className="font-mono font-black text-4xl sm:text-5xl tracking-[0.25em] text-[#C084FC] my-2 select-all drop-shadow-[0_0_15px_rgba(168,85,247,0.35)]">
             {roomView.roomCode}
           </div>
 
-          <div className="flex flex-col gap-2 mt-3">
-            <button
-              type="button"
+          <div className="flex flex-col sm:flex-row gap-2 mt-4">
+            <Button
+              variant="primary"
+              size="md"
+              fullWidth
               onClick={handleShare}
-              className="w-full px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold text-sm shadow-md shadow-indigo-600/20 min-h-[44px] flex items-center justify-center gap-2 transition-colors"
-              style={{ touchAction: 'manipulation' }}
+              className="min-h-[44px]"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -154,15 +179,16 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 />
               </svg>
               <span>Share Room Code</span>
-            </button>
+            </Button>
 
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="md"
+              fullWidth
               onClick={handleCopyCode}
-              className="w-full px-3 py-2 rounded-xl bg-slate-700/70 hover:bg-slate-700 active:bg-slate-800 text-slate-300 font-medium text-xs border border-slate-600/60 min-h-[44px] flex items-center justify-center gap-1.5 transition-colors"
-              style={{ touchAction: 'manipulation' }}
+              className="min-h-[44px]"
             >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -171,17 +197,17 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 />
               </svg>
               <span>Copy code</span>
-            </button>
+            </Button>
           </div>
-        </div>
+        </Card>
 
-        {/* Host Settings / Game Setup */}
-        <div className="bg-slate-800/80 border border-slate-700/70 rounded-2xl p-4 shadow-lg mb-5">
+        {/* Host Settings Card */}
+        <Card variant="surface" padding="md" className="mb-4 shadow-xl">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-300">
+            <h2 className="text-xs font-extrabold uppercase tracking-wider text-[#F5F3FF]">
               Cards Per Player
             </h2>
-            <span className="text-[11px] font-semibold text-slate-400">
+            <span className="text-[11px] font-bold text-[#A89BC8]">
               max {maxAllowed}
             </span>
           </div>
@@ -204,15 +230,15 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       style={{ touchAction: 'manipulation' }}
                       className={`relative min-h-[44px] rounded-xl flex flex-col items-center justify-center p-1.5 font-bold transition-all border ${
                         isDisabled
-                          ? 'bg-slate-900/40 border-slate-800 text-slate-600 cursor-not-allowed opacity-50'
+                          ? 'bg-[#120824]/50 border-white/5 text-[#A89BC8]/30 cursor-not-allowed opacity-40'
                           : isSelected
-                          ? 'bg-indigo-600/30 border-indigo-400 text-white shadow-md shadow-indigo-600/20 ring-1 ring-indigo-400'
-                          : 'bg-slate-700/60 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-slate-500 active:bg-slate-800'
+                          ? 'bg-[#7C3AED]/30 border-[#A855F7] text-[#F5F3FF] shadow-primary-glow ring-1 ring-[#A855F7]'
+                          : 'bg-[#221440] border-[rgba(167,139,250,0.18)] text-[#A89BC8] hover:text-[#F5F3FF] hover:border-purple-400/40 active:scale-95'
                       }`}
                     >
-                      <span className="text-sm">{preset}</span>
+                      <span className="text-sm font-black">{preset}</span>
                       {isRec && (
-                        <span className="text-[9px] font-medium text-emerald-400 leading-tight">
+                        <span className="text-[9px] font-extrabold text-[#22C55E] leading-tight">
                           recommended
                         </span>
                       )}
@@ -222,23 +248,23 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               </div>
 
               {/* Stepper Control */}
-              <div className="flex items-center justify-between bg-slate-900/60 rounded-xl p-2 border border-slate-700/60">
+              <div className="flex items-center justify-between bg-[#221440] rounded-xl p-2 border border-[rgba(167,139,250,0.18)]">
                 <button
                   type="button"
                   disabled={currentCards <= 3}
                   onClick={() => onUpdateSettings(currentCards - 1)}
                   style={{ touchAction: 'manipulation' }}
-                  className="w-11 h-11 rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-lg font-bold border border-slate-700 transition-colors"
+                  className="w-11 h-11 rounded-lg bg-[#1A1030] hover:bg-[#2e1955] active:bg-[#120824] text-[#F5F3FF] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-xl font-bold border border-[rgba(167,139,250,0.18)] transition-all min-h-[44px] min-w-[44px]"
                   aria-label="Decrease cards"
                 >
                   −
                 </button>
 
-                <div className="flex flex-col items-center">
-                  <span className="font-mono text-xl font-extrabold text-white">
+                <div className="flex flex-col items-center select-none">
+                  <span className="font-mono text-2xl font-black text-[#F5F3FF]">
                     {currentCards}
                   </span>
-                  <span className="text-[10px] text-slate-400 font-medium">
+                  <span className="text-[10px] text-[#A89BC8] font-bold">
                     {currentCards === 1 ? 'card each' : 'cards each'}
                   </span>
                 </div>
@@ -248,7 +274,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   disabled={currentCards >= maxAllowed}
                   onClick={() => onUpdateSettings(currentCards + 1)}
                   style={{ touchAction: 'manipulation' }}
-                  className="w-11 h-11 rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-lg font-bold border border-slate-700 transition-colors"
+                  className="w-11 h-11 rounded-lg bg-[#1A1030] hover:bg-[#2e1955] active:bg-[#120824] text-[#F5F3FF] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-xl font-bold border border-[rgba(167,139,250,0.18)] transition-all min-h-[44px] min-w-[44px]"
                   aria-label="Increase cards"
                 >
                   +
@@ -256,122 +282,185 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               </div>
             </div>
           ) : (
-            /* Read-only for non-hosts */
-            <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-slate-700/60">
-              <span className="text-sm font-semibold text-slate-300">
+            /* Read-only view for non-hosts */
+            <div className="flex items-center justify-between p-3 rounded-xl bg-[#221440] border border-[rgba(167,139,250,0.18)]">
+              <span className="text-xs font-bold text-[#A89BC8] uppercase tracking-wider">
                 Dealing
               </span>
               <div className="flex items-center gap-2">
-                <span className="font-mono text-base font-bold text-indigo-300">
+                <span className="font-mono text-base font-black text-[#C084FC]">
                   {pluralize(currentCards, 'card')} each
                 </span>
                 {currentCards === recommended && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <Pill variant="success" className="text-[10px]">
                     recommended
-                  </span>
+                  </Pill>
                 )}
               </div>
             </div>
           )}
-        </div>
+        </Card>
 
-        {/* Player List */}
-        <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl p-4 shadow-lg mb-6">
+        {/* Players List as Seats */}
+        <Card variant="surface" padding="md" className="mb-4 shadow-xl">
           <div className="flex items-center justify-between mb-3 px-1">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-300">
-              Players
+            <h2 className="text-xs font-extrabold uppercase tracking-wider text-[#F5F3FF]">
+              Seats
             </h2>
-            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">
-              {roomView.players.length} / 8
-            </span>
+            <Pill variant="secondary" className="font-mono font-bold">
+              {roomView.players.length}/8 players
+            </Pill>
           </div>
 
-          <ul className="space-y-2">
+          <div className="space-y-2">
+            {/* Active Players */}
             {roomView.players.map((player) => {
               const isCurrentPlayer = player.playerId === currentPlayerId;
               const isPlayerHost = player.playerId === roomView.hostId;
 
               return (
-                <li
+                <div
                   key={player.playerId}
                   className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
                     isCurrentPlayer
-                      ? 'bg-slate-700/80 border-indigo-500/50 shadow-sm'
-                      : 'bg-slate-800/90 border-slate-700/70'
+                      ? 'bg-[#221440] border-[#A855F7]/50 shadow-sm'
+                      : 'bg-[#1A1030] border-[rgba(167,139,250,0.15)]'
                   }`}
                   style={{ minHeight: '44px' }}
                 >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span
-                      title={player.connected ? 'Connected' : 'Offline'}
-                      className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                        player.connected ? 'bg-emerald-400' : 'bg-rose-500 ring-2 ring-rose-950'
-                      }`}
-                    />
+                  <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                    <Avatar name={player.name} size="md" />
 
-                    <span
-                      className={`font-semibold text-sm truncate ${
-                        player.connected ? 'text-white' : 'text-slate-400 line-through'
-                      }`}
-                    >
-                      {player.name}
-                    </span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {/* Green or Grey Connection Dot */}
+                      <span
+                        title={player.connected ? 'Connected' : 'Offline'}
+                        className={`w-2 h-2 rounded-full shrink-0 ${
+                          player.connected ? 'bg-[#22C55E]' : 'bg-[#A89BC8]'
+                        }`}
+                      />
 
-                    {isCurrentPlayer && (
-                      <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shrink-0">
-                        You
+                      <span
+                        className={`font-bold text-sm truncate ${
+                          player.connected ? 'text-[#F5F3FF]' : 'text-[#A89BC8] line-through'
+                        }`}
+                      >
+                        {player.name}
                       </span>
-                    )}
+
+                      {isCurrentPlayer && (
+                        <Pill variant="primary" className="text-[10px] py-0 px-1.5">
+                          You
+                        </Pill>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                  <div className="flex items-center gap-1.5 shrink-0">
                     {isPlayerHost && (
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                      <Pill variant="gold" className="text-[11px] font-bold">
                         <span>👑</span>
                         <span>Host</span>
-                      </span>
+                      </Pill>
                     )}
 
                     {!player.connected && (
-                      <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                      <Pill variant="danger" className="text-[10px]">
                         Offline
-                      </span>
+                      </Pill>
                     )}
                   </div>
-                </li>
+                </div>
               );
             })}
-          </ul>
-        </div>
+
+            {/* Empty Seat Placeholders with Dashed Borders */}
+            {Array.from({ length: emptySeatsCount }).map((_, index) => (
+              <div
+                key={`empty-seat-${index}`}
+                className="flex items-center gap-3 p-3 rounded-xl border-2 border-dashed border-[rgba(167,139,250,0.12)] bg-[#1A1030]/30 select-none"
+                style={{ minHeight: '44px' }}
+              >
+                <div className="w-9 h-9 rounded-full border-2 border-dashed border-[rgba(167,139,250,0.2)] flex items-center justify-center text-[#A89BC8]/40 shrink-0">
+                  <span className="text-xs font-bold">＋</span>
+                </div>
+                <span className="text-xs font-semibold text-[#A89BC8]/50">
+                  Waiting...
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
       </div>
 
-      {/* Footer / Host Start Game Action */}
-      <div className="mt-4">
+      {/* Footer / Start Game Action */}
+      <footer className="mt-4 pt-2">
         {isHost ? (
           <div>
-            <button
-              type="button"
+            <Button
+              variant="primary"
+              size="lg"
+              fullWidth
               disabled={playerCount < 2}
               onClick={onStartGame}
-              style={{ touchAction: 'manipulation' }}
-              className="w-full min-h-[48px] rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-base shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2"
             >
-              <span>Deal & Start Game</span>
-            </button>
+              <span>Deal &amp; Start Game</span>
+            </Button>
             {playerCount < 2 && (
-              <p className="text-center text-xs text-slate-400 mt-2">
-                Need at least 2 players to start
+              <p className="text-center text-xs font-semibold text-[#A89BC8] mt-2">
+                Need at least 2 players
               </p>
             )}
           </div>
         ) : (
-          <div className="text-center">
-            <p className="text-xs text-slate-400">
-              Waiting for the host to start the game...
+          <div className="text-center py-2">
+            <p className="text-sm font-semibold text-[#A89BC8]">
+              Waiting for the host to start
             </p>
           </div>
         )}
-      </div>
+      </footer>
+
+      {/* Leave Lobby Confirmation Sheet */}
+      <Sheet
+        isOpen={isConfirmLeaveOpen}
+        onClose={() => setIsConfirmLeaveOpen(false)}
+        title="Leave Lobby?"
+        subtitle="You will be returned to the main screen"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-[#A89BC8]">
+            Are you sure you want to leave this game room?
+          </p>
+          <div className="flex items-center gap-3 pt-2">
+            <Button
+              variant="danger"
+              size="md"
+              fullWidth
+              onClick={() => {
+                setIsConfirmLeaveOpen(false);
+                onLeaveRoom();
+              }}
+            >
+              Yes, leave
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              fullWidth
+              onClick={() => setIsConfirmLeaveOpen(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Sheet>
+
+      {/* How to Play Modal */}
+      <HowToPlayModal
+        isOpen={isHowToPlayOpen}
+        onClose={() => setIsHowToPlayOpen(false)}
+      />
     </div>
   );
 };

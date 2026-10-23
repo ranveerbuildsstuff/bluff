@@ -108,7 +108,7 @@ describe('Slice 8: Accounts & Leaderboard UI', () => {
       expect(html).not.toContain('Sign in');
       expect(html).not.toContain('Leaderboard');
       expect(html).toContain('BLUFF');
-      expect(html).toContain('Create New Room');
+      expect(html).toContain('Create room');
     });
 
     it('LobbyScreen hides AccountButton when isAccountsEnabled=false', () => {

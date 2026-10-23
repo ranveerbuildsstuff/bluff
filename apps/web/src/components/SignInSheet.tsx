@@ -5,6 +5,8 @@ import {
   createEmailPasswordAccount,
   resetPassword,
 } from '../firebase';
+import { Sheet } from '../ui/Sheet';
+import { Button } from '../ui/Button';
 
 interface SignInSheetProps {
   isOpen: boolean;
@@ -110,36 +112,21 @@ export const SignInSheet: React.FC<SignInSheetProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex flex-col justify-end sm:justify-center items-center p-0 sm:p-4">
-      <div className="w-full sm:max-w-[380px] bg-slate-900 border-t sm:border border-slate-700/80 rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-white">
-            {mode === 'signin' ? 'Sign in to Bluff' : 'Create an Account'}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-11 h-11 rounded-full text-slate-400 hover:text-white flex items-center justify-center text-lg min-h-[44px] min-w-[44px]"
-            style={{ touchAction: 'manipulation' }}
-            aria-label="Close"
-          >
-            ✕
-          </button>
-        </div>
-
-        <p className="text-xs text-slate-400 mb-5">
-          Save your wins, appear on the leaderboard, and track your match history across devices.
-        </p>
-
+    <Sheet
+      isOpen={isOpen}
+      onClose={onClose}
+      title={mode === 'signin' ? 'Sign in to Bluff' : 'Create an Account'}
+      subtitle="Save your wins, appear on the leaderboard, and track your match history across devices."
+    >
+      <div className="space-y-4">
         {/* Feedback Messages */}
         {error && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium leading-relaxed">
+          <div className="p-3 rounded-xl bg-[#F43F5E]/15 border border-[#F43F5E]/30 text-rose-300 text-xs font-medium leading-relaxed">
             {error}
           </div>
         )}
         {info && (
-          <div className="mb-4 p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-medium leading-relaxed">
+          <div className="p-3 rounded-xl bg-[#22C55E]/15 border border-[#22C55E]/30 text-emerald-300 text-xs font-medium leading-relaxed">
             {info}
           </div>
         )}
@@ -149,7 +136,7 @@ export const SignInSheet: React.FC<SignInSheetProps> = ({
           type="button"
           disabled={isLoading}
           onClick={handleGoogleSignIn}
-          className="w-full min-h-[48px] px-4 rounded-xl bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-900 font-semibold text-sm shadow-md transition-colors flex items-center justify-center gap-3 disabled:opacity-50"
+          className="w-full min-h-[48px] px-4 rounded-xl bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-900 font-bold text-sm shadow-md transition-all flex items-center justify-center gap-3 disabled:opacity-50 select-none"
           style={{ touchAction: 'manipulation' }}
         >
           <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
@@ -174,9 +161,9 @@ export const SignInSheet: React.FC<SignInSheetProps> = ({
         </button>
 
         {/* Divider */}
-        <div className="relative flex items-center justify-center my-5">
-          <div className="border-t border-slate-700 w-full" />
-          <span className="bg-slate-900 px-3 text-xs uppercase font-medium text-slate-500 tracking-wider absolute">
+        <div className="relative flex items-center justify-center my-4">
+          <div className="border-t border-[rgba(167,139,250,0.18)] w-full" />
+          <span className="bg-[#1A1030] px-3 text-[11px] uppercase font-bold text-[#A89BC8] tracking-wider absolute">
             or with email
           </span>
         </div>
@@ -186,7 +173,7 @@ export const SignInSheet: React.FC<SignInSheetProps> = ({
           <div>
             <label
               htmlFor="auth-email"
-              className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5"
+              className="block text-xs font-bold text-[#A89BC8] uppercase tracking-wider mb-1.5"
             >
               Email
             </label>
@@ -197,8 +184,7 @@ export const SignInSheet: React.FC<SignInSheetProps> = ({
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
               autoComplete="email"
-              className="w-full px-3.5 rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ minHeight: '48px' }}
+              className="w-full px-3.5 rounded-xl bg-[#221440] border border-[rgba(167,139,250,0.2)] text-[#F5F3FF] placeholder-[#A89BC8]/50 text-sm focus:outline-none focus:ring-2 focus:ring-[#A855F7] min-h-[48px]"
             />
           </div>
 
@@ -206,7 +192,7 @@ export const SignInSheet: React.FC<SignInSheetProps> = ({
             <div className="flex items-center justify-between mb-1.5">
               <label
                 htmlFor="auth-password"
-                className="block text-xs font-semibold text-slate-300 uppercase tracking-wider"
+                className="block text-xs font-bold text-[#A89BC8] uppercase tracking-wider"
               >
                 Password
               </label>
@@ -214,7 +200,7 @@ export const SignInSheet: React.FC<SignInSheetProps> = ({
                 <button
                   type="button"
                   onClick={handleForgotPassword}
-                  className="text-xs text-indigo-400 hover:text-indigo-300 active:text-indigo-500 font-medium"
+                  className="text-xs text-[#A855F7] hover:text-purple-300 active:text-purple-400 font-medium min-h-[30px]"
                 >
                   Forgot password?
                 </button>
@@ -227,29 +213,26 @@ export const SignInSheet: React.FC<SignInSheetProps> = ({
               onChange={(e) => setPassword(e.target.value)}
               placeholder={mode === 'signup' ? 'At least 8 characters' : 'Enter your password'}
               autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-              className="w-full px-3.5 rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ minHeight: '48px' }}
+              className="w-full px-3.5 rounded-xl bg-[#221440] border border-[rgba(167,139,250,0.2)] text-[#F5F3FF] placeholder-[#A89BC8]/50 text-sm focus:outline-none focus:ring-2 focus:ring-[#A855F7] min-h-[48px]"
             />
           </div>
 
-          <button
+          <Button
             type="submit"
-            disabled={isLoading}
-            className="w-full min-h-[48px] rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold text-sm shadow-lg shadow-indigo-600/25 transition-colors flex items-center justify-center disabled:opacity-50 mt-2"
-            style={{ touchAction: 'manipulation' }}
+            variant="primary"
+            size="md"
+            fullWidth
+            isLoading={isLoading}
+            className="mt-2"
           >
-            {isLoading
-              ? 'Please wait...'
-              : mode === 'signin'
-              ? 'Sign in'
-              : 'Create account'}
-          </button>
+            {mode === 'signin' ? 'Sign in' : 'Create account'}
+          </Button>
         </form>
 
         {/* Toggle signin / signup */}
         <div className="mt-4 text-center">
           {mode === 'signin' ? (
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-[#A89BC8]">
               Don&apos;t have an account?{' '}
               <button
                 type="button"
@@ -258,13 +241,13 @@ export const SignInSheet: React.FC<SignInSheetProps> = ({
                   setError(null);
                   setInfo(null);
                 }}
-                className="text-indigo-400 hover:text-indigo-300 font-semibold underline underline-offset-2 ml-1 min-h-[44px] inline-flex items-center"
+                className="text-[#A855F7] hover:text-purple-300 font-bold underline underline-offset-2 ml-1 min-h-[44px] inline-flex items-center"
               >
                 Create account
               </button>
             </p>
           ) : (
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-[#A89BC8]">
               Already have an account?{' '}
               <button
                 type="button"
@@ -273,7 +256,7 @@ export const SignInSheet: React.FC<SignInSheetProps> = ({
                   setError(null);
                   setInfo(null);
                 }}
-                className="text-indigo-400 hover:text-indigo-300 font-semibold underline underline-offset-2 ml-1 min-h-[44px] inline-flex items-center"
+                className="text-[#A855F7] hover:text-purple-300 font-bold underline underline-offset-2 ml-1 min-h-[44px] inline-flex items-center"
               >
                 Sign in
               </button>
@@ -282,17 +265,18 @@ export const SignInSheet: React.FC<SignInSheetProps> = ({
         </div>
 
         {/* Not now button */}
-        <div className="mt-2 text-center">
-          <button
-            type="button"
+        <div className="text-center pt-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            fullWidth
             onClick={onClose}
-            className="w-full py-2.5 text-xs text-slate-400 hover:text-slate-200 active:text-white font-medium min-h-[44px] flex items-center justify-center transition-colors"
-            style={{ touchAction: 'manipulation' }}
+            className="text-xs text-[#A89BC8]"
           >
             Not now
-          </button>
+          </Button>
         </div>
       </div>
-    </div>
+    </Sheet>
   );
 };

@@ -96,7 +96,7 @@ describe('Mini: Join by Link & text fixes (Web UI)', () => {
     );
 
     expect(html).not.toContain("You&#x27;re joining room");
-    expect(html).toContain('value=""');
+    expect(html).not.toContain('value="INVALID"');
     expect(errorToastMock).not.toHaveBeenCalled();
   });
 

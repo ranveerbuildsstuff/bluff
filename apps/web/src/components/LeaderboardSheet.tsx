@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { LeaderboardEntry } from '@bluff/shared';
 import { getLeaderboard, getMe } from '../api';
 import { getFreshIdToken } from '../firebase';
+import { Sheet } from '../ui/Sheet';
+import { Button } from '../ui/Button';
+import { Avatar } from '../ui/Avatar';
+import { Pill } from '../ui/Pill';
 
 interface LeaderboardSheetProps {
   isOpen: boolean;
@@ -77,146 +81,131 @@ export const LeaderboardSheet: React.FC<LeaderboardSheetProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex flex-col justify-end sm:justify-center items-center p-0 sm:p-4">
-      <div className="w-full sm:max-w-[420px] bg-slate-900 border-t sm:border border-slate-700/80 rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col max-h-[92vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-          <div className="flex items-center gap-2.5">
-            <span className="text-2xl">🏆</span>
-            <div>
-              <h2 className="text-lg font-black text-white tracking-wide">
-                Leaderboard
-              </h2>
-              <p className="text-xs text-slate-400">Top ranked players</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-11 h-11 rounded-full text-slate-400 hover:text-white flex items-center justify-center text-lg min-h-[44px] min-w-[44px]"
-            style={{ touchAction: 'manipulation' }}
-            aria-label="Close"
-          >
-            ✕
-          </button>
+    <Sheet
+      isOpen={isOpen}
+      onClose={onClose}
+      title={
+        <div className="flex items-center gap-2">
+          <span className="text-xl">🏆</span>
+          <span className="text-lg font-black text-[#F5F3FF]">Leaderboard</span>
         </div>
+      }
+      subtitle="Top ranked players"
+    >
+      <div className="flex flex-col min-h-[300px]">
+        {error && (
+          <div className="p-3 mb-4 rounded-xl bg-[#F43F5E]/15 border border-[#F43F5E]/30 text-rose-300 text-xs font-medium">
+            <p className="mb-2">{error}</p>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => setLoadTrigger((n) => n + 1)}
+            >
+              Retry
+            </Button>
+          </div>
+        )}
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto py-4">
-          {error && (
-            <div className="p-3 mb-4 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs">
-              <p className="mb-2">{error}</p>
-              <button
-                type="button"
-                onClick={() => setLoadTrigger((n) => n + 1)}
-                className="px-4 py-2 rounded-lg bg-rose-500/25 hover:bg-rose-500/40 text-rose-200 font-semibold text-xs min-h-[44px] transition-colors"
-                style={{ touchAction: 'manipulation' }}
-              >
-                Retry
-              </button>
+        {isLoading ? (
+          <div className="py-16 flex flex-col items-center justify-center gap-2 text-[#A89BC8] text-sm">
+            <div className="w-7 h-7 border-2 border-[#A855F7] border-t-transparent rounded-full animate-spin" />
+            <span>Loading leaderboard...</span>
+          </div>
+        ) : entries.length === 0 ? (
+          <div className="py-16 text-center px-4">
+            <span className="text-4xl block mb-3">🎲</span>
+            <p className="text-sm font-bold text-[#F5F3FF]">
+              No ranked games yet. Be the first!
+            </p>
+            <p className="text-xs text-[#A89BC8] mt-1">
+              Games with 3+ players count towards the leaderboard.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-1.5 flex-1">
+            {/* Header row */}
+            <div className="grid grid-cols-12 text-[11px] font-bold uppercase tracking-wider text-[#A89BC8] px-3 py-1.5 border-b border-[rgba(167,139,250,0.1)]">
+              <span className="col-span-2">Rank</span>
+              <span className="col-span-5">Player</span>
+              <span className="col-span-2 text-center text-[#F5B942]">Wins</span>
+              <span className="col-span-3 text-right">Win Rate</span>
             </div>
-          )}
 
-          {isLoading ? (
-            <div className="py-16 flex flex-col items-center justify-center gap-2 text-slate-400 text-sm">
-              <div className="w-7 h-7 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
-              <span>Loading leaderboard...</span>
-            </div>
-          ) : entries.length === 0 ? (
-            <div className="py-16 text-center px-4">
-              <span className="text-4xl block mb-3">🎲</span>
-              <p className="text-sm font-semibold text-slate-300">
-                No ranked games yet. Be the first!
-              </p>
-              <p className="text-xs text-slate-500 mt-1">
-                Games with 3+ players count towards the leaderboard.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-1.5">
-              {/* Header row */}
-              <div className="grid grid-cols-12 text-[11px] font-bold uppercase tracking-wider text-slate-400 px-3 py-1.5">
-                <span className="col-span-2">Rank</span>
-                <span className="col-span-5">Player</span>
-                <span className="col-span-2 text-center text-amber-400">Wins</span>
-                <span className="col-span-3 text-right">Win Rate</span>
-              </div>
+            {/* Rows */}
+            {entries.map((entry) => {
+              const isOwnRow =
+                Boolean(myStats) &&
+                entry.displayName === myStats?.displayName &&
+                entry.wins === myStats?.wins &&
+                entry.gamesPlayed === myStats?.gamesPlayed;
 
-              {/* Rows */}
-              {entries.map((entry) => {
-                const isOwnRow =
-                  Boolean(myStats) &&
-                  entry.displayName === myStats?.displayName &&
-                  entry.wins === myStats?.wins &&
-                  entry.gamesPlayed === myStats?.gamesPlayed;
+              return (
+                <div
+                  key={`${entry.rank}-${entry.displayName}-${entry.gamesPlayed}`}
+                  className={`grid grid-cols-12 items-center px-3 py-2.5 rounded-xl text-xs transition-colors ${
+                    isOwnRow
+                      ? 'bg-violet-600/25 border border-purple-400/50 shadow-sm'
+                      : 'bg-[#221440]/60 border border-[rgba(167,139,250,0.12)] hover:bg-[#221440]'
+                  }`}
+                >
+                  {/* Rank */}
+                  <div className="col-span-2 flex items-center font-bold">
+                    {entry.rank === 1 ? (
+                      <span className="text-[#F5B942] font-black">🥇 1</span>
+                    ) : entry.rank === 2 ? (
+                      <span className="text-slate-300 font-black">🥈 2</span>
+                    ) : entry.rank === 3 ? (
+                      <span className="text-amber-500 font-black">🥉 3</span>
+                    ) : (
+                      <span className="text-[#A89BC8] font-mono font-bold">#{entry.rank}</span>
+                    )}
+                  </div>
 
-                return (
-                  <div
-                    key={`${entry.rank}-${entry.displayName}-${entry.gamesPlayed}`}
-                    className={`grid grid-cols-12 items-center px-3 py-2.5 rounded-xl text-xs transition-colors ${
-                      isOwnRow
-                        ? 'bg-indigo-600/25 border border-indigo-400/50 shadow-sm'
-                        : 'bg-slate-800/60 border border-slate-700/40 hover:bg-slate-800'
-                    }`}
-                  >
-                    {/* Rank */}
-                    <div className="col-span-2 flex items-center font-bold">
-                      {entry.rank === 1 ? (
-                        <span className="text-amber-400 font-black">🥇 1</span>
-                      ) : entry.rank === 2 ? (
-                        <span className="text-slate-300 font-black">🥈 2</span>
-                      ) : entry.rank === 3 ? (
-                        <span className="text-amber-600 font-black">🥉 3</span>
-                      ) : (
-                        <span className="text-slate-400 font-mono">#{entry.rank}</span>
-                      )}
+                  {/* Name + Avatar */}
+                  <div className="col-span-5 flex items-center gap-2 min-w-0 pr-1">
+                    <Avatar name={entry.displayName} size="sm" />
+                    <span className="font-bold text-[#F5F3FF] truncate">
+                      {entry.displayName}
+                    </span>
+                    {isOwnRow && (
+                      <Pill variant="primary" className="text-[9px] px-1.5 py-0 shrink-0">
+                        You
+                      </Pill>
+                    )}
+                  </div>
+
+                  {/* Wins */}
+                  <div className="col-span-2 text-center font-mono font-black text-[#F5B942]">
+                    {entry.wins}
+                  </div>
+
+                  {/* Win rate & Games */}
+                  <div className="col-span-3 text-right">
+                    <div className="font-mono font-bold text-[#22C55E]">
+                      {Math.round(entry.winRate * 100)}%
                     </div>
-
-                    {/* Name */}
-                    <div className="col-span-5 flex items-center gap-1.5 min-w-0 pr-1">
-                      <span className="font-semibold text-white truncate">
-                        {entry.displayName}
-                      </span>
-                      {isOwnRow && (
-                        <span className="text-[9px] font-bold uppercase px-1 py-0.2 rounded bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 shrink-0">
-                          You
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Wins */}
-                    <div className="col-span-2 text-center font-mono font-bold text-amber-300">
-                      {entry.wins}
-                    </div>
-
-                    {/* Win rate & Games */}
-                    <div className="col-span-3 text-right">
-                      <div className="font-mono font-bold text-emerald-400">
-                        {Math.round(entry.winRate * 100)}%
-                      </div>
-                      <div className="text-[10px] text-slate-500">
-                        {entry.gamesPlayed} {entry.gamesPlayed === 1 ? 'game' : 'games'}
-                      </div>
+                    <div className="text-[10px] text-[#A89BC8]">
+                      {entry.gamesPlayed} {entry.gamesPlayed === 1 ? 'game' : 'games'}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Footer */}
-        <div className="pt-3 border-t border-slate-800">
-          <button
-            type="button"
+        <div className="pt-3 mt-4 border-t border-[rgba(167,139,250,0.12)]">
+          <Button
+            variant="secondary"
+            size="md"
+            fullWidth
             onClick={onClose}
-            className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-slate-800 text-slate-200 font-semibold text-xs border border-slate-700 min-h-[44px] flex items-center justify-center transition-colors"
-            style={{ touchAction: 'manipulation' }}
           >
             Close
-          </button>
+          </Button>
         </div>
       </div>
-    </div>
+    </Sheet>
   );
 };
